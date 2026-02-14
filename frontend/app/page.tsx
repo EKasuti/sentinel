@@ -1,8 +1,9 @@
 "use client";
 
-import { Shield, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
+import { Shield } from "lucide-react";
 
 export default function Home() {
   const router = useRouter();
@@ -22,7 +23,7 @@ export default function Home() {
           <h1 className="text-5xl font-bold mb-4">SENTINEL</h1>
           <p className="text-xl text-zinc-400">Multi-Agent Security Scanner</p>
           <p className="text-zinc-500 mt-4 max-w-md mx-auto">
-            Deploy parallel AI agents to analyze your application's security posture
+            Deploy parallel AI agents to analyze your application&apos;s security posture
           </p>
         </div>
 
