@@ -99,7 +99,7 @@ def cancel_run(run_id):
         return jsonify({"error": "Failed to cancel security run"}), 500
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5000))
+    port = int(os.getenv('PORT', 8000))
     debug = os.getenv('FLASK_ENV') == 'development'
 
     logger.info(f"Starting Flask app on port {port} (debug={debug})")

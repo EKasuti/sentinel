@@ -18,6 +18,7 @@ class AuthAbuseAgent(BaseAgent):
                 await self.update_progress(10)
                 await page.goto(self.target_url)
                 await self.emit_event("INFO", f"Scanning {self.target_url} for login forms...")
+                await self.save_screenshot(page, "Initial page load")
                 
                 # Logic: Find inputs with type='password'
                 password_inputs = await page.query_selector_all("input[type='password']")
@@ -29,6 +30,7 @@ class AuthAbuseAgent(BaseAgent):
 
                 await self.update_progress(30)
                 await self.emit_event("WARNING", f"Found login form with {len(password_inputs)} password fields.")
+                await self.save_screenshot(page, "Login form detected")
                 
                 # Report finding
                 await self.report_finding(
@@ -53,6 +55,7 @@ class AuthAbuseAgent(BaseAgent):
                     )
 
                 await self.update_progress(80)
+                await self.save_screenshot(page, "Auth scan completed")
                 await self.emit_event("SUCCESS", "Auth abuse scan completed.")
                 
             except Exception as e:

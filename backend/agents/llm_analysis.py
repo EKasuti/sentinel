@@ -25,6 +25,7 @@ class LLMAnalysisAgent(BaseAgent):
             try:
                 await self.update_progress(10)
                 await page.goto(self.target_url)
+                await self.save_screenshot(page, "Initial page load")
                 
                 # Get page content (text only to save tokens)
                 content = await page.inner_text("body")
@@ -72,6 +73,7 @@ class LLMAnalysisAgent(BaseAgent):
                     )
 
                 await self.update_progress(100)
+                await self.save_screenshot(page, "Analysis completed")
                 await self.emit_event("SUCCESS", "LLM Analysis finished.")
 
             except Exception as e:

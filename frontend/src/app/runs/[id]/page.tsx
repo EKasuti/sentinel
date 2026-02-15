@@ -123,6 +123,7 @@ export default function RunDetails() {
                                 key={session.id}
                                 session={session}
                                 findings={findings.filter(f => f.agent_type === session.agent_type)}
+                                events={events.filter(e => e.agent_type === session.agent_type)}
                             />
                         ))}
                     </div>

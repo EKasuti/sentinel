@@ -17,6 +17,7 @@ class ExposureAgent(BaseAgent):
                 await self.update_progress(10)
                 await page.goto(self.target_url, timeout=30000)
                 await self.emit_event("INFO", f"Navigated to {self.target_url}")
+                await self.save_screenshot(page, "Initial page load")
                 await self.update_progress(30)
                 
                 title = await page.title()
@@ -47,6 +48,7 @@ class ExposureAgent(BaseAgent):
                     )
                 
                 await self.update_progress(90)
+                await self.save_screenshot(page, "Scan completed")
                 await self.emit_event("SUCCESS", "Scan completed successfully.")
                 
             except Exception as e:
