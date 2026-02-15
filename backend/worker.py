@@ -1,49 +1,25 @@
 import asyncio
 import time
 import os
-import json
 from db import supabase
-from agents.exposure import ExposureAgent
-from agents.headers import HeadersAgent
+from agents.exposure_v2 import ExposureAgent
+from agents.headers_v2 import HeadersAgent
 from agents.auth_abuse import AuthAbuseAgent
 from agents.llm_analysis import LLMAnalysisAgent
 from agents.sqli import SQLiAgent
 from agents.xss import XSSAgent
 from agents.red_team import RedTeamAgent
-
-# Check if we should use Modal (production) or local execution (development)
-USE_MODAL = os.getenv('USE_MODAL', 'false').lower() == 'true'
-
-if USE_MODAL:
-    try:
-        import modal
-        # Look up the deployed Modal functions
-        MODAL_APP_NAME = os.getenv('MODAL_APP_NAME', 'ekasuti')
-
-        # Use from_name to get references to deployed functions
-        MODAL_AGENT_MAP = {
-            "exposure": modal.Function.from_name(MODAL_APP_NAME, "run_exposure_agent"),
-            "auth_abuse": modal.Function.from_name(MODAL_APP_NAME, "run_auth_abuse_agent"),
-            "llm_analysis": modal.Function.from_name(MODAL_APP_NAME, "run_llm_analysis_agent"),
-            "red_team": modal.Function.from_name(MODAL_APP_NAME, "run_red_team_agent"),
-            "headers_tls": modal.Function.from_name(MODAL_APP_NAME, "run_headers_agent"),
-            "sqli": modal.Function.from_name(MODAL_APP_NAME, "run_sqli_agent"),
-            "xss": modal.Function.from_name(MODAL_APP_NAME, "run_xss_agent"),
-        }
-        print("✅ Modal integration enabled - agents will run on Modal")
-    except ImportError:
-        print("⚠️  Modal not installed. Install with: pip install modal")
-        print("⚠️  Falling back to local execution")
-        USE_MODAL = False
-    except Exception as e:
-        print(f"⚠️  Modal setup failed: {e}")
-        print("⚠️  Falling back to local execution")
-        USE_MODAL = False
+from agents.spider import SpiderAgent
+from agents.cors import CORSAgent
+from agents.portscan import PortScanAgent
 
 # Mapping string agent_type to Class (local execution)
 AGENT_MAP = {
+    "spider": SpiderAgent,
     "exposure": ExposureAgent,
     "headers_tls": HeadersAgent,
+    "cors": CORSAgent,
+    "portscan": PortScanAgent,
     "auth_abuse": AuthAbuseAgent,
     "llm_analysis": LLMAnalysisAgent,
     "sqli": SQLiAgent,
@@ -52,100 +28,66 @@ AGENT_MAP = {
     "custom": ExposureAgent
 }
 
-# Agents that require Playwright (should use Modal in production)
-PLAYWRIGHT_AGENTS = ["exposure", "auth_abuse", "llm_analysis", "red_team", "xss", "sqli"]
-
-async def process_run(run_id: str, target_url: str, config: dict = None):
+async def process_run(run_id: str, target_url: str):
     print(f"Processing Run: {run_id} for {target_url}")
 
     # 1. Update Run Status to RUNNING
-    # SECURITY: Scrub sensitive configuration from DB immediately after reading
-    # We keep the config in memory for the agents but remove it from persistent storage
-    try:
-        supabase.table('security_runs').update({
-            "status": "RUNNING", 
-            "started_at": "now()"
-        }).eq("id", run_id).execute()
-    except Exception as e:
-        print(f"⚠️ Failed to update run status: {e}")
-    
-    # Clean up file-based config cache after reading
-    config_cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.config_cache')
-    config_path = os.path.join(config_cache_dir, f"{run_id}.json")
-    if os.path.exists(config_path):
-        try:
-            os.remove(config_path)
-            print(f"🔒 Config cache cleaned for run {run_id}")
-        except:
-            pass
+    supabase.table('security_runs').update({"status": "RUNNING", "started_at": "now()"}).eq("id", run_id).execute()
 
     # 2. Fetch Queued Sessions
     sessions_response = supabase.table('agent_sessions').select("*").eq("run_id", run_id).eq("status", "QUEUED").execute()
     sessions_data = sessions_response.data
     print(f"DEBUG: Found {len(sessions_data)} sessions for run {run_id}")
 
-    tasks = []
+    # 3. Launch Agents (Local Execution)
+    # Spider runs FIRST to map attack surface, then non-LLM, then LLM agents
+    SPIDER_AGENTS = {"spider"}
+    LLM_AGENTS = {"llm_analysis", "red_team"}
+    
+    spider_tasks = []
+    non_llm_tasks = []
+    llm_sessions = []
 
-    # 3. Launch Agents
     for session in sessions_data:
         agent_type = session['agent_type']
         session_id = session['id']
+        
+        print(f"💻 Launching {agent_type} agent locally (session: {session_id})")
+        
+        AgentClass = AGENT_MAP.get(agent_type, ExposureAgent)
+        agent_instance = AgentClass(run_id, session_id, target_url)
 
-        # Decide whether to use Modal or local execution
-        if USE_MODAL and agent_type in MODAL_AGENT_MAP:
-            # Use Modal for remote execution
-            print(f"🚀 Launching {agent_type} agent on Modal (session: {session_id})")
-            modal_func = MODAL_AGENT_MAP[agent_type]
-            # Pass config to modal function
-            tasks.append(modal_func.remote.aio(run_id, session_id, target_url, config))
+        if agent_type in SPIDER_AGENTS:
+            spider_tasks.append(agent_instance)
+        elif agent_type in LLM_AGENTS:
+            llm_sessions.append(agent_instance)
         else:
-            # Use local execution
-            print(f"💻 Launching {agent_type} agent locally (session: {session_id})")
-            if agent_type in PLAYWRIGHT_AGENTS and USE_MODAL == False:
-                print(f"⚠️  Warning: {agent_type} requires Playwright. Consider enabling Modal for production.")
+            non_llm_tasks.append(agent_instance.run())
+    
+    # Phase 1: Run spider agent first (maps attack surface)
+    for spider in spider_tasks:
+        try:
+            await spider.run()
+        except Exception as e:
+            print(f"Spider Agent failed: {e}")
+    
+    # Phase 2: Run non-LLM agents concurrently (these are fast, no rate limit issues)
+    if non_llm_tasks:
+        await asyncio.gather(*non_llm_tasks)
 
-            AgentClass = AGENT_MAP.get(agent_type, ExposureAgent)
-            # Pass config to local agent
-            agent_instance = AgentClass(run_id, session_id, target_url, config)
-            tasks.append(agent_instance.run())
-
-    # 4. Wait for all agents
-    if tasks:
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Log any errors and update session status if failed
-        for i, result in enumerate(results):
-            session = sessions_data[i]
-            session_id = session['id']
-            agent_type = session['agent_type']
-
-            if isinstance(result, Exception):
-                print(f"❌ Agent task {i} ({agent_type}) failed: {result}")
-                # Update status to FAILED
-                try:
-                    supabase.table('agent_sessions').update({
-                        "status": "FAILED",
-                        "updated_at": "now()" # Let DB handle timestamp if possible, or use string
-                    }).eq("id", session_id).execute()
-                except Exception as update_err:
-                    print(f"Failed to update session {session_id} to FAILED: {update_err}")
-
-            else:
-                print(f"✅ Agent task {i} ({agent_type}) completed: {result}")
+    # Run LLM agents sequentially to avoid RPM contention
+    for agent in llm_sessions:
+        try:
+            await agent.run()
+        except Exception as e:
+            print(f"LLM Agent {agent.__class__.__name__} failed: {e}")
 
     # 5. Update Run Status to COMPLETED
     supabase.table('security_runs').update({"status": "COMPLETED", "ended_at": "now()"}).eq("id", run_id).execute()
     print(f"Run {run_id} Completed")
-    
-    # 6. Generate Executive Summary
-    try:
-        from summary_generator import generate_run_summary
-        generate_run_summary(run_id, target_url)
-    except Exception as e:
-        print(f"Summary generation failed: {e}")
 
 async def worker_loop():
-    print("Worker started. Polling for QUEUED runs...")
+    print("Worker started (Local Mode). Polling for QUEUED runs...")
     while True:
         try:
             # Poll for 1 queued run
@@ -153,24 +95,7 @@ async def worker_loop():
             
             if response.data:
                 run = response.data[0]
-                run_id = run['id']
-                
-                # Try to get config from DB first, then file cache
-                config = run.get('configuration') or {}
-                if not config or not config.get('auth_type') or config.get('auth_type') == 'none':
-                    # Try file-based config cache
-                    config_cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.config_cache')
-                    config_path = os.path.join(config_cache_dir, f"{run_id}.json")
-                    if os.path.exists(config_path):
-                        try:
-                            with open(config_path, 'r') as f:
-                                config = json.load(f)
-                            print(f"📂 Loaded config from file cache for run {run_id}")
-                        except Exception as e:
-                            print(f"⚠️ Failed to read config cache: {e}")
-                
-                print(f"🔧 Config auth_type: {config.get('auth_type', 'none')}")
-                await process_run(run_id, run['target_url'], config)
+                await process_run(run['id'], run['target_url'])
             else:
                 await asyncio.sleep(2) # Sleep if no work
                 

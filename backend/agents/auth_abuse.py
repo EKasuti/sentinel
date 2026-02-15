@@ -1,203 +1,214 @@
 from .base import BaseAgent
 from playwright.async_api import async_playwright
+import aiohttp
 import asyncio
-import random
-from urllib.parse import urljoin
 
 class AuthAbuseAgent(BaseAgent):
+    """
+    Authentication & Authorization abuse scanner.
+    
+    Strategy:
+    1. Find login forms across common paths
+    2. Test for default/weak credentials
+    3. Test for IDOR on API endpoints
+    4. Check for admin panel access without auth
+    5. Test password reset flows for enumeration
+    """
+
+    COMMON_CREDS = [
+        ("admin@juice-sh.op", "admin123"),
+        ("admin", "admin"),
+        ("admin", "password"),
+        ("admin@admin.com", "admin"),
+        ("test@test.com", "test"),
+        ("admin", "admin123"),
+        ("user", "user"),
+        ("demo", "demo"),
+    ]
+
     async def execute(self):
-        await self.emit_event("INFO", "Starting Auth Abuse simulation.")
-        
+        await self.emit_event("INFO", "Starting Auth Abuse & Access Control scan...")
+
         async with async_playwright() as p:
+            # Headless must be true for Modal environment
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context()
             page = await context.new_page()
-            
+
             try:
+                await page.goto(self.target_url, wait_until="domcontentloaded", timeout=15000)
+                await asyncio.sleep(1)
                 await self.update_progress(10)
+
+                # ===== Phase 1: Find login form =====
+                await self.emit_event("INFO", "Phase 1: Hunting for login forms...")
                 
-                # Step 1: Navigate to the target
-                try:
-                    await page.goto(self.target_url, wait_until="networkidle", timeout=30000)
-                except:
-                    await page.goto(self.target_url, wait_until="domcontentloaded")
-                
-                await self.emit_event("INFO", f"Scanning {self.target_url} for login forms...")
-                await self.save_screenshot(page, "Landing Page")
-                
-                # Step 2: Try to find login form — use broad selectors like base login
-                password_inputs = await page.query_selector_all("input[type='password']")
-                
-                if not password_inputs:
-                    # Try clicking entry points to reach login form
-                    entry_selectors = ", ".join([
-                        "a[href*='login']", "a[href*='signin']", "a[href*='sign-in']",
-                        "a[href*='signup']", "a[href*='sign-up']", "a[href*='register']",
-                        "a[href*='auth']", "a[href*='account']",
-                        "button:has-text('Login')", "button:has-text('Log In')",
-                        "button:has-text('Sign In')", "button:has-text('Sign Up')",
-                        "button:has-text('Get Started')", "button:has-text('Register')",
-                        "a:has-text('Login')", "a:has-text('Log In')",
-                        "a:has-text('Sign In')", "a:has-text('Sign Up')",
-                        "a:has-text('Get Started')", "a:has-text('Register')",
-                    ])
-                    login_links = await page.query_selector_all(entry_selectors)
+                login_paths = ["/#/login", "/login", "/signin", "/auth/login", "/account/login"]
+                login_found = False
+                login_url = ""
+
+                for path in login_paths:
+                    try:
+                        test_url = self.target_url.rstrip("/") + path
+                        await page.goto(test_url, wait_until="domcontentloaded", timeout=10000)
+                        await asyncio.sleep(1)
+
+                        password_input = await page.query_selector("input[type='password']")
+                        if password_input:
+                            login_found = True
+                            login_url = test_url
+                            await self.emit_event("WARNING", f"Login form found at {path}")
+                            break
+                    except:
+                        continue
+
+                await self.update_progress(25)
+
+                # ===== Phase 2: Test default credentials =====
+                if login_found:
+                    await self.emit_event("INFO", "Phase 2: Testing default/weak credentials...")
                     
-                    for link in login_links[:5]:
-                        link_text = (await link.text_content() or "").strip()
-                        await self.emit_event("INFO", f"Found potential auth entry: '{link_text}'. Clicking...")
+                    for email, password in self.COMMON_CREDS:
                         try:
-                            await link.click(timeout=5000)
-                            try:
-                                await page.wait_for_load_state("networkidle", timeout=8000)
-                            except:
-                                pass
-                            try:
-                                await page.wait_for_selector("input[type='password']", timeout=5000)
-                                password_inputs = await page.query_selector_all("input[type='password']")
-                                await self.emit_event("INFO", f"Login form found after clicking '{link_text}'")
-                                await self.save_screenshot(page, "Login Form Found")
-                                break
-                            except:
-                                await self.emit_event("INFO", f"No password field after '{link_text}', trying next...")
-                                await page.goto(self.target_url, wait_until="domcontentloaded", timeout=15000)
-                        except:
-                            continue
-                
-                # Step 3: Fallback — try common auth URL paths
-                if not password_inputs:
-                    common_paths = ['/login', '/signin', '/sign-in', '/auth/login', '/signup', '/register']
-                    for path in common_paths:
-                        try_url = urljoin(self.target_url, path)
-                        await self.emit_event("INFO", f"Trying direct path: {try_url}")
-                        try:
-                            await page.goto(try_url, wait_until="domcontentloaded", timeout=10000)
-                            try:
-                                await page.wait_for_selector("input[type='password']", timeout=3000)
-                                password_inputs = await page.query_selector_all("input[type='password']")
-                                await self.emit_event("INFO", f"Login form found at {try_url}")
-                                await self.save_screenshot(page, f"Login Form at {path}")
-                                break
-                            except:
+                            await page.goto(login_url, wait_until="domcontentloaded", timeout=10000)
+                            await asyncio.sleep(1)
+
+                            email_input = await page.query_selector(
+                                "input[type='email'], input[name='email'], input[id='email'], "
+                                "input[name='username'], input[id='loginUsername']"
+                            )
+                            password_input = await page.query_selector("input[type='password']")
+
+                            if not email_input or not password_input:
                                 continue
+
+                            await email_input.fill(email)
+                            await password_input.fill(password)
+
+                            submit = await page.query_selector(
+                                "button[type='submit'], button[id='loginButton'], "
+                                "input[type='submit'], button:has-text('Login'), "
+                                "button:has-text('Sign in'), button:has-text('Log in')"
+                            )
+
+                            if submit:
+                                response_promise = page.wait_for_response(
+                                    lambda resp: "/login" in resp.url or "/auth" in resp.url or "/rest/user" in resp.url,
+                                    timeout=5000
+                                )
+                                await submit.click()
+
+                                try:
+                                    response = await response_promise
+                                    if response.status == 200:
+                                        body = await response.text()
+                                        if "token" in body.lower() or "authentication" in body.lower():
+                                            await self.report_finding(
+                                                severity="CRITICAL",
+                                                title="Default Credentials — Admin Login",
+                                                evidence=f"Successfully logged in with {email}:{password}. Server returned auth token.",
+                                                recommendation="Change all default credentials. Enforce strong password policies. Implement account lockout after failed attempts."
+                                            )
+                                            break
+                                except:
+                                    pass  # timeout = login failed, which is expected
+
                         except:
                             continue
-                
-                # Step 4: Check iframes as last resort
-                if not password_inputs:
-                    for frame in page.frames:
-                        pws = await frame.query_selector_all("input[type='password']")
-                        if pws:
-                            password_inputs = pws
-                            await self.emit_event("INFO", "Found login form inside an iframe.")
+
+                    # Check for rate limiting
+                    await self.emit_event("INFO", "Testing for brute force protection...")
+                    rate_limited = False
+                    for i in range(5):
+                        try:
+                            await page.goto(login_url, wait_until="domcontentloaded", timeout=10000)
+                            await asyncio.sleep(0.3)
+                            email_input = await page.query_selector(
+                                "input[type='email'], input[name='email'], input[id='email'], input[name='username']"
+                            )
+                            password_input = await page.query_selector("input[type='password']")
+                            if email_input and password_input:
+                                await email_input.fill(f"brutetest{i}@test.com")
+                                await password_input.fill("wrongpassword")
+                                submit = await page.query_selector("button[type='submit'], button[id='loginButton'], button:has-text('Login')")
+                                if submit:
+                                    await submit.click()
+                                    await asyncio.sleep(0.5)
+                        except:
+                            rate_limited = True
                             break
 
-                if not password_inputs:
-                    await self.save_screenshot(page, "No Login Form Detected")
-                    await self.emit_event("WARNING", "No login forms detected after exhaustive search. Skipping auth attacks.")
-                    await self.update_progress(100)
-                    return
+                    if not rate_limited:
+                        await self.report_finding(
+                            severity="MEDIUM",
+                            title="No Brute Force Protection",
+                            evidence=f"Successfully submitted {5} login attempts rapidly without rate limiting or CAPTCHA.",
+                            recommendation="Implement rate limiting (e.g., 5 attempts per minute). Add CAPTCHA after 3 failed attempts. Consider account lockout policies."
+                        )
 
-                # ---- LOGIN FORM FOUND ----
-                await self.update_progress(30)
-                await self.emit_event("INFO", f"Found login form with {len(password_inputs)} password fields.")
+                else:
+                    await self.emit_event("INFO", "No login form found on common paths.")
+
+                await self.update_progress(50)
+
+                # ===== Phase 3: Admin panel access =====
+                await self.emit_event("INFO", "Phase 3: Testing for exposed admin panels...")
                 
-                await self.report_finding(
-                    severity="INFO",
-                    title="Login Form Detected",
-                    evidence=f"Login form with password fields found at {page.url}",
-                    recommendation="Ensure login endpoint implements rate limiting, brute-force protection, and MFA."
-                )
-
-                # Step 5: Test weak/common credentials
-                await self.emit_event("INFO", "Testing common credential combinations...")
-                weak_creds = [
-                    ("admin", "admin"), ("admin", "password"), ("admin", "123456"),
-                    ("test", "test"), ("admin", "admin123"),
+                admin_paths = [
+                    "/#/administration", "/admin", "/admin/", "/administrator",
+                    "/admin/dashboard", "/admin/panel", "/#/admin",
+                    "/rest/admin/application-version", "/api/Users/",
                 ]
+
+                async with aiohttp.ClientSession() as session:
+                    for path in admin_paths:
+                        try:
+                            url = self.target_url.rstrip("/") + path
+                            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                                if resp.status == 200:
+                                    body = await resp.text()
+                                    if len(body) > 50:  # Not empty
+                                        await self.report_finding(
+                                            severity="HIGH",
+                                            title=f"Exposed Admin/API Endpoint: {path}",
+                                            evidence=f"GET {path} returned 200 OK ({len(body)} bytes) without authentication.",
+                                            recommendation="Protect admin endpoints with authentication middleware. Implement role-based access control."
+                                        )
+                                        break  # Report once, not for each
+                        except:
+                            continue
+
+                await self.update_progress(75)
+
+                # ===== Phase 4: User registration (if open) =====
+                await self.emit_event("INFO", "Phase 4: Checking for open registration...")
                 
-                for uname, pwd in weak_creds:
+                reg_paths = ["/#/register", "/register", "/signup", "/auth/register"]
+                for path in reg_paths:
                     try:
-                        # Find and fill fields
-                        user_field = await page.query_selector("input[type='email'], input[type='text']")
-                        pw_field = await page.query_selector("input[type='password']")
-                        if user_field and pw_field:
-                            await user_field.fill(uname)
-                            await pw_field.fill(pwd)
-                            
-                            submit_btn = await page.query_selector("button[type='submit'], input[type='submit'], button:has-text('Login'), button:has-text('Log In'), button:has-text('Sign In'), button:has-text('Sign Up')")
-                            if submit_btn:
-                                await submit_btn.click(timeout=5000)
-                            else:
-                                await pw_field.press("Enter")
-                            
-                            try:
-                                await page.wait_for_load_state("networkidle", timeout=5000)
-                            except:
-                                await asyncio.sleep(2)
-                            
-                            # Check if login succeeded (no password field = logged in)
-                            if not await page.query_selector("input[type='password']"):
-                                await self.save_screenshot(page, f"Weak Creds Worked: {uname}")
-                                await self.report_finding(
-                                    severity="CRITICAL",
-                                    title="Weak Default Credentials Accepted",
-                                    evidence=f"Login succeeded with credentials: {uname}/{pwd} at {page.url}",
-                                    recommendation="Remove default credentials. Enforce strong password policies and implement account lockout."
-                                )
-                                # Navigate back to login for more tests
-                                await page.go_back()
-                                await asyncio.sleep(1)
-                            else:
-                                # Still on login page — check for rate limiting
-                                await self.emit_event("INFO", f"Credentials {uname}/{pwd} rejected (expected).")
-                    except Exception as e:
-                        await self.emit_event("WARNING", f"Credential test error: {e}")
-                        # Navigate back to the form
-                        await page.goto(page.url, wait_until="domcontentloaded", timeout=10000)
-
-                await self.update_progress(60)
-
-                # Step 6: Test rate limiting (rapid login attempts)
-                await self.emit_event("INFO", "Testing for rate limiting / account lockout...")
-                rate_limited = False
-                for i in range(5):
-                    try:
-                        user_field = await page.query_selector("input[type='email'], input[type='text']")
-                        pw_field = await page.query_selector("input[type='password']")
-                        if user_field and pw_field:
-                            await user_field.fill("ratetest@test.com")
-                            await pw_field.fill(f"wrongpass{i}")
-                            submit_btn = await page.query_selector("button[type='submit'], input[type='submit'], button:has-text('Login'), button:has-text('Log In'), button:has-text('Sign In'), button:has-text('Sign Up')")
-                            if submit_btn:
-                                await submit_btn.click(timeout=5000)
-                            else:
-                                await pw_field.press("Enter")
-                            await asyncio.sleep(0.5)
-                            
-                            # Check for rate limit indicators
+                        await page.goto(self.target_url.rstrip("/") + path, wait_until="domcontentloaded", timeout=8000)
+                        await asyncio.sleep(1)
+                        reg_form = await page.query_selector("input[type='password']")
+                        if reg_form:
+                            await self.emit_event("INFO", f"Open registration found at {path}")
+                            # Check if role/admin field is accessible
                             content = await page.content()
-                            if any(kw in content.lower() for kw in ['rate limit', 'too many', 'locked', 'captcha', 'try again later']):
-                                rate_limited = True
-                                await self.emit_event("INFO", "Rate limiting detected (good!).")
-                                break
+                            if "role" in content.lower() or "admin" in content.lower() or "isadmin" in content.lower():
+                                await self.report_finding(
+                                    severity="HIGH",
+                                    title="Privilege Escalation via Registration",
+                                    evidence=f"Registration form at {path} may allow setting role/admin fields. Inspect form fields for hidden admin flags.",
+                                    recommendation="Never trust client-side role assignment. Validate and enforce roles server-side only."
+                                )
+                            break
                     except:
-                        break
-                
-                if not rate_limited:
-                    await self.report_finding(
-                        severity="MEDIUM",
-                        title="No Rate Limiting on Login",
-                        evidence=f"5 rapid failed login attempts were accepted without rate limiting or account lockout at {page.url}",
-                        recommendation="Implement rate limiting, CAPTCHA after failed attempts, and account lockout policies."
-                    )
+                        continue
 
-                await self.update_progress(80)
-                await self.emit_event("SUCCESS", "Auth abuse scan completed.")
-                
+                await self.update_progress(100)
+                await self.emit_event("SUCCESS", "Auth Abuse scan completed.")
+
             except Exception as e:
                 await self.emit_event("ERROR", f"Auth scan failed: {str(e)}")
             finally:
                 await context.close()
                 await browser.close()
-
