@@ -62,7 +62,7 @@ export default function Home() {
             </div>
           </div>
           <h1 className="text-6xl font-black tracking-tighter mb-4 bg-gradient-to-r from-white via-gray-200 to-gray-500 bg-clip-text text-transparent">
-            SENTINEL
+            SHIELD
           </h1>
           <p className="text-gray-400 mb-12 text-lg font-mono">
             AUTONOMOUS BLUE TEAM ORCHESTRATOR

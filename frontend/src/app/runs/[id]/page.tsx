@@ -91,7 +91,7 @@ export default function RunDetails() {
                 <div>
                     <h2 className="text-2xl font-bold flex items-center gap-2">
                         <Shield className="text-cyber-blue" />
-                        SENTINEL LIVE VIEW
+                        SHIELD LIVE VIEW
                     </h2>
                     <p className="text-gray-500 font-mono text-sm mt-1">
                         TARGET: <span className="text-cyber-blue">{run?.target_url}</span> | RID: {runId.slice(0, 8)}

@@ -22,7 +22,7 @@ class RedTeamAgent(BaseAgent):
             # Headless MUST be true for Modal environment
             browser = await p.chromium.launch(headless=True)
             self.context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Sentinel/1.0",
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Shield/1.0",
                 viewport={'width': 1280, 'height': 720}
             )
             self.page = await self.context.new_page()
