@@ -109,6 +109,22 @@ export default function RunDetails() {
                 </div>
             </header>
 
+            {/* Executive Summary */}
+            {events.find(e => e.message === "EXECUTIVE SUMMARY GENERATED") && (
+                <motion.div
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-8 bg-gradient-to-r from-blue-900/20 to-purple-900/20 border border-blue-500/30 rounded-lg p-6"
+                >
+                    <h3 className="text-lg font-bold text-cyber-blue mb-4 flex items-center gap-2">
+                        <Activity className="w-5 h-5" /> EXECUTIVE SECURITY SUMMARY
+                    </h3>
+                    <div className="text-gray-300 text-sm whitespace-pre-wrap leading-relaxed font-mono">
+                        {(events.find(e => e.message === "EXECUTIVE SUMMARY GENERATED")?.data as any)?.summary}
+                    </div>
+                </motion.div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
 
                 {/* Left: Agent Lanes */}
@@ -174,18 +190,22 @@ export default function RunDetails() {
                                     key={f.id}
                                     initial={{ opacity: 0, x: 20 }}
                                     animate={{ opacity: 1, x: 0 }}
-                                    className={`p-3 rounded border text-sm ${f.severity === 'CRITICAL' ? 'bg-red-900/20 border-red-500 text-red-200' :
-                                        f.severity === 'HIGH' ? 'bg-orange-900/20 border-orange-500 text-orange-200' :
-                                            f.severity === 'MEDIUM' ? 'bg-yellow-900/20 border-yellow-500 text-yellow-200' :
-                                                'bg-blue-900/10 border-blue-500/50 text-blue-200'
+                                    onClick={() => window.location.href = `/runs/${runId}/findings/${f.id}`}
+                                    className={`p-3 rounded border text-sm cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${f.severity === 'CRITICAL' ? 'bg-red-900/20 border-red-500 text-red-200 hover:bg-red-900/40' :
+                                        f.severity === 'HIGH' ? 'bg-orange-900/20 border-orange-500 text-orange-200 hover:bg-orange-900/40' :
+                                            f.severity === 'MEDIUM' ? 'bg-yellow-900/20 border-yellow-500 text-yellow-200 hover:bg-yellow-900/40' :
+                                                'bg-blue-900/10 border-blue-500/50 text-blue-200 hover:bg-blue-900/30'
                                         }`}
                                 >
                                     <div className="flex justify-between items-start mb-1">
-                                        <span className="font-bold">{f.title}</span>
+                                        <span className="font-bold hover:underline decoration-1 underline-offset-2">{f.title}</span>
                                         <span className="text-[10px] uppercase border px-1 rounded border-current opacity-70">{f.severity}</span>
                                     </div>
                                     <p className="opacity-70 text-xs mb-2 line-clamp-2">{f.evidence}</p>
-                                    <div className="text-[10px] text-gray-500 font-mono">{f.agent_type}</div>
+                                    <div className="text-[10px] text-gray-500 font-mono flex justify-between">
+                                        <span>{f.agent_type}</span>
+                                        <span className="opacity-50">Click for details &rarr;</span>
+                                    </div>
                                 </motion.div>
                             ))}
                         </AnimatePresence>

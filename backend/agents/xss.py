@@ -32,12 +32,12 @@ class XSSAgent(BaseAgent):
                         text = await resp.text()
                         
                         if payload in text:
-                             await self.report_finding(
-                                severity="HIGH",
-                                title="Reflected XSS Detected",
-                                evidence=f"Payload reflected in response: {payload} on param: {param}",
-                                recommendation="Sanitize all user inputs and use Content-Security-Policy."
-                            )
+                                await self.report_finding(
+                                    severity="HIGH",
+                                    title="Reflected XSS Detected",
+                                    evidence=f"Vulnerability found at: {fuzzed_url}\n\nReproduction Steps:\n1. Inject payload: `{payload}` into parameter: `{param}`\n2. Observe alert box execution.",
+                                    recommendation="Sanitize all user inputs and use Content-Security-Policy."
+                                )
                 except:
                     pass
                 

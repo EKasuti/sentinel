@@ -39,8 +39,8 @@ class SQLiAgent(BaseAgent):
                                 await self.report_finding(
                                     severity="CRITICAL",
                                     title="SQL Injection Detected",
-                                    evidence=f"Reflected SQL error with payload: {payload} on param: {param}",
-                                    recommendation="Use prepared statements (parameterized queries)."
+                                    evidence=f"Vulnerability found at: {fuzzed_url}\n\nReproduction Steps:\n1. Inject payload: `{payload}` into parameter: `{param}`\n2. Observe SQL syntax error in response.",
+                                    recommendation="Use prepared statements (parameterized queries) and input validation."
                                 )
                                 await self.emit_event("SUCCESS", "SQLi Vulnerability CONFIRMED!")
                                 return # Stop after finding one for demo speed

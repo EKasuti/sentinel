@@ -11,7 +11,7 @@ class AuthAbuseAgent(BaseAgent):
             # Headless must be true for Modal environment
             browser = await p.chromium.launch(headless=True)
             # Create a context to support video recording
-            context = await browser.new_context(record_video_dir="videos/")
+            context = await browser.new_context()
             page = await context.new_page()
             
             try:

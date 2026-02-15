@@ -46,6 +46,8 @@ def start_run():
 
         if not target_url:
             return jsonify({"error": "target_url is required"}), 400
+        
+        target_url = target_url.strip()
 
         logger.info(f"Starting security run for {target_url} with agents: {agents}")
 

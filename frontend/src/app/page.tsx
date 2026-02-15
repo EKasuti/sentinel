@@ -1,14 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { Shield, Play, Loader2 } from "lucide-react";
+import { Shield, Play, Loader2, RefreshCw } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { SecurityRun } from "@/lib/types";
 
 export default function Home() {
   const [url, setUrl] = useState("");
   const [isStarting, setIsStarting] = useState(false);
+  const [runs, setRuns] = useState<SecurityRun[]>([]);
   const router = useRouter();
+
+  useEffect(() => {
+    fetchRuns();
+  }, []);
+
+  const fetchRuns = async () => {
+    const { data } = await supabase.from('security_runs').select('*').order('created_at', { ascending: false }).limit(10);
+    if (data) setRuns(data);
+  };
 
   const startRun = async () => {
     if (!url) return;
@@ -37,8 +49,8 @@ export default function Home() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-dots-pattern">
-      <div className="relative z-10 w-full max-w-2xl text-center">
+    <main className="flex min-h-screen flex-col items-center p-24 bg-dots-pattern">
+      <div className="relative z-10 w-full max-w-2xl text-center mb-20">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -56,7 +68,7 @@ export default function Home() {
             AUTONOMOUS BLUE TEAM ORCHESTRATOR
           </p>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 mb-8">
             <input
               type="text"
               placeholder="https://target-app.com"
@@ -74,12 +86,64 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="mt-8 flex justify-center gap-4 text-xs font-mono text-gray-500">
+          <div className="flex justify-center gap-4 text-xs font-mono text-gray-500">
             <span>• OPENAI LOGIC ANALYSIS</span>
             <span>• SQL INJECTION FUZZING</span>
             <span>• PLAYWRIGHT AUTOMATION</span>
           </div>
         </motion.div>
+      </div>
+
+      {/* History Table */}
+      <div className="w-full max-w-4xl z-10">
+        <div className="flex justify-between items-center mb-4 border-b border-gray-800 pb-2">
+          <h2 className="text-xl font-bold font-mono text-gray-300">RECENT OPERATIONS</h2>
+          <button onClick={fetchRuns} className="text-gray-500 hover:text-white transition-colors">
+            <RefreshCw size={16} />
+          </button>
+        </div>
+        <div className="bg-gray-900/50 border border-gray-800 rounded-lg overflow-hidden">
+          <table className="w-full text-left text-sm font-mono">
+            <thead className="bg-gray-800/50 text-gray-400">
+              <tr>
+                <th className="p-4">TARGET</th>
+                <th className="p-4">STATUS</th>
+                <th className="p-4">DATE</th>
+                <th className="p-4 text-right">ACTION</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800">
+              {runs.map(run => (
+                <tr key={run.id} className="hover:bg-gray-800/20 transition-colors">
+                  <td className="p-4 text-white">{run.target_url}</td>
+                  <td className="p-4">
+                    <span className={`px-2 py-1 rounded text-xs ${run.status === 'COMPLETED' ? 'bg-green-900/40 text-green-400' :
+                        run.status === 'RUNNING' ? 'bg-blue-900/40 text-blue-400 animate-pulse' :
+                          run.status === 'FAILED' ? 'bg-red-900/40 text-red-400' :
+                            'bg-gray-800 text-gray-400'
+                      }`}>
+                      {run.status}
+                    </span>
+                  </td>
+                  <td className="p-4 text-gray-500">{new Date(run.created_at).toLocaleDateString()}</td>
+                  <td className="p-4 text-right">
+                    <button
+                      onClick={() => router.push(`/runs/${run.id}`)}
+                      className="text-cyber-blue hover:underline"
+                    >
+                      VIEW REPORT &rarr;
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {runs.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="p-8 text-center text-gray-500">No operations found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Background Decor */}

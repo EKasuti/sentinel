@@ -23,8 +23,7 @@ class RedTeamAgent(BaseAgent):
             browser = await p.chromium.launch(headless=True)
             self.context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Sentinel/1.0",
-                viewport={'width': 1280, 'height': 720},
-                record_video_dir="videos/"
+                viewport={'width': 1280, 'height': 720}
             )
             self.page = await self.context.new_page()
 
@@ -58,9 +57,6 @@ class RedTeamAgent(BaseAgent):
                 if action['tool'] == 'finish':
                     await self.emit_event("SUCCESS", f"Mission Complete: {action.get('reason', 'Done')}")
                     break
-                
-                if step % 2 == 0 or action.get('finding'):
-                    await self.save_screenshot(self.page, f"Step {step}: {action['tool']}")
                 
                 await self._execute_tool(action)
                 

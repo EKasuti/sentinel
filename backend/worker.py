@@ -115,6 +115,13 @@ async def process_run(run_id: str, target_url: str):
     # 5. Update Run Status to COMPLETED
     supabase.table('security_runs').update({"status": "COMPLETED", "ended_at": "now()"}).eq("id", run_id).execute()
     print(f"Run {run_id} Completed")
+    
+    # 6. Generate Executive Summary
+    try:
+        from summary_generator import generate_run_summary
+        generate_run_summary(run_id, target_url)
+    except Exception as e:
+        print(f"Summary generation failed: {e}")
 
 async def worker_loop():
     print("Worker started. Polling for QUEUED runs...")
