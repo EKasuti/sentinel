@@ -16,6 +16,7 @@ from agents.headers import HeadersAgent
 from agents.exposure import ExposureAgent
 from agents.auth_abuse import AuthAbuseAgent
 from agents.llm_analysis import LLMAnalysisAgent
+from agents.broken_links import BrokenLinkHijackAgent
 
 class TestAgents(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -184,6 +185,70 @@ class TestAgents(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(call_kwargs['severity'], "HIGH")
             self.assertEqual(call_kwargs['title'], "Test Finding")
             self.assertIn("Justification: Because reasons", call_kwargs['evidence'])
+
+    async def test_broken_links_agent_detection(self):
+        agent = BrokenLinkHijackAgent(self.run_id, self.session_id, self.target_url)
+
+        # Mock Playwright
+        mock_page = AsyncMock()
+        mock_page.evaluate.return_value = [
+            "https://twitter.com/valid_user",
+            "https://twitter.com/dead_user_123",
+            "https://example.com/internal"
+        ]
+        mock_page.goto = AsyncMock()
+
+        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
+        mock_context.new_page.return_value = mock_page
+        mock_context.close = AsyncMock()
+        mock_browser.new_context.return_value = mock_context
+        mock_browser.close = AsyncMock()
+
+        mock_playwright = AsyncMock()
+        mock_playwright.chromium.launch.return_value = mock_browser
+        mock_playwright.__aenter__ = AsyncMock(return_value=mock_playwright)
+        mock_playwright.__aexit__ = AsyncMock()
+
+        # Mock aiohttp
+        mock_response_valid = MagicMock()
+        mock_response_valid.status = 200
+        mock_response_valid.__aenter__ = AsyncMock(return_value=mock_response_valid)
+        mock_response_valid.__aexit__ = AsyncMock()
+
+        mock_response_dead = MagicMock()
+        mock_response_dead.status = 404
+        mock_response_dead.__aenter__ = AsyncMock(return_value=mock_response_dead)
+        mock_response_dead.__aexit__ = AsyncMock()
+
+        mock_session = MagicMock()
+        # Side effect to return 200 for valid and 404 for dead
+        def get_side_effect(url, **kwargs):
+            if "dead_user_123" in url:
+                return mock_response_dead
+            return mock_response_valid
+
+        mock_session.get.side_effect = get_side_effect
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock()
+
+        with patch('agents.broken_links.async_playwright', return_value=mock_playwright), \
+             patch('aiohttp.ClientSession', return_value=mock_session):
+
+            agent.emit_event = AsyncMock()
+            agent.report_finding = AsyncMock()
+            agent.update_progress = AsyncMock()
+            agent.update_status = AsyncMock()
+
+            await agent.execute()
+
+            # Check if it reported the broken link
+            reported_titles = [call.kwargs['title'] for call in agent.report_finding.call_args_list]
+            reported_evidence = [call.kwargs['evidence'] for call in agent.report_finding.call_args_list]
+
+            self.assertIn("Broken Social Media Link (Hijacking Risk)", reported_titles)
+            self.assertTrue(any("dead_user_123" in ev for ev in reported_evidence))
+            self.assertFalse(any("valid_user" in ev for ev in reported_evidence))
 
 if __name__ == '__main__':
     unittest.main()

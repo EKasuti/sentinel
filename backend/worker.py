@@ -9,6 +9,7 @@ from agents.llm_analysis import LLMAnalysisAgent
 from agents.sqli import SQLiAgent
 from agents.xss import XSSAgent
 from agents.red_team import RedTeamAgent
+from agents.broken_links import BrokenLinkHijackAgent
 
 # Check if we should use Modal (production) or local execution (development)
 USE_MODAL = os.getenv('USE_MODAL', 'false').lower() == 'true'
@@ -28,6 +29,7 @@ if USE_MODAL:
             "headers_tls": modal.Function.from_name(MODAL_APP_NAME, "run_headers_agent"),
             "sqli": modal.Function.from_name(MODAL_APP_NAME, "run_sqli_agent"),
             "xss": modal.Function.from_name(MODAL_APP_NAME, "run_xss_agent"),
+            "broken_links": modal.Function.from_name(MODAL_APP_NAME, "run_broken_links_agent"),
         }
         print("✅ Modal integration enabled - agents will run on Modal")
     except ImportError:
@@ -48,11 +50,12 @@ AGENT_MAP = {
     "sqli": SQLiAgent,
     "xss": XSSAgent,
     "red_team": RedTeamAgent,
+    "broken_links": BrokenLinkHijackAgent,
     "custom": ExposureAgent
 }
 
 # Agents that require Playwright (should use Modal in production)
-PLAYWRIGHT_AGENTS = ["exposure", "auth_abuse", "llm_analysis", "red_team"]
+PLAYWRIGHT_AGENTS = ["exposure", "auth_abuse", "llm_analysis", "red_team", "broken_links"]
 
 async def process_run(run_id: str, target_url: str):
     print(f"Processing Run: {run_id} for {target_url}")

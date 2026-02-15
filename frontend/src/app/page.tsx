@@ -33,7 +33,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           target_url: url,
-          agents: ["exposure", "headers_tls", "auth_abuse", "llm_analysis", "sqli", "xss", "red_team"]
+          agents: ["exposure", "headers_tls", "auth_abuse", "llm_analysis", "sqli", "xss", "red_team", "broken_links"]
         })
       });
 
@@ -90,6 +90,7 @@ export default function Home() {
             <span>• OPENAI LOGIC ANALYSIS</span>
             <span>• SQL INJECTION FUZZING</span>
             <span>• PLAYWRIGHT AUTOMATION</span>
+            <span>• BROKEN LINK HIJACKING</span>
           </div>
         </motion.div>
       </div>
