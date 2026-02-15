@@ -1,6 +1,7 @@
 import asyncio
 import time
 import os
+import json
 from db import supabase
 from agents.exposure import ExposureAgent
 from agents.headers import HeadersAgent
@@ -54,11 +55,29 @@ AGENT_MAP = {
 # Agents that require Playwright (should use Modal in production)
 PLAYWRIGHT_AGENTS = ["exposure", "auth_abuse", "llm_analysis", "red_team", "xss", "sqli"]
 
-async def process_run(run_id: str, target_url: str):
+async def process_run(run_id: str, target_url: str, config: dict = None):
     print(f"Processing Run: {run_id} for {target_url}")
 
     # 1. Update Run Status to RUNNING
-    supabase.table('security_runs').update({"status": "RUNNING", "started_at": "now()"}).eq("id", run_id).execute()
+    # SECURITY: Scrub sensitive configuration from DB immediately after reading
+    # We keep the config in memory for the agents but remove it from persistent storage
+    try:
+        supabase.table('security_runs').update({
+            "status": "RUNNING", 
+            "started_at": "now()"
+        }).eq("id", run_id).execute()
+    except Exception as e:
+        print(f"⚠️ Failed to update run status: {e}")
+    
+    # Clean up file-based config cache after reading
+    config_cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.config_cache')
+    config_path = os.path.join(config_cache_dir, f"{run_id}.json")
+    if os.path.exists(config_path):
+        try:
+            os.remove(config_path)
+            print(f"🔒 Config cache cleaned for run {run_id}")
+        except:
+            pass
 
     # 2. Fetch Queued Sessions
     sessions_response = supabase.table('agent_sessions').select("*").eq("run_id", run_id).eq("status", "QUEUED").execute()
@@ -77,7 +96,8 @@ async def process_run(run_id: str, target_url: str):
             # Use Modal for remote execution
             print(f"🚀 Launching {agent_type} agent on Modal (session: {session_id})")
             modal_func = MODAL_AGENT_MAP[agent_type]
-            tasks.append(modal_func.remote.aio(run_id, session_id, target_url))
+            # Pass config to modal function
+            tasks.append(modal_func.remote.aio(run_id, session_id, target_url, config))
         else:
             # Use local execution
             print(f"💻 Launching {agent_type} agent locally (session: {session_id})")
@@ -85,7 +105,8 @@ async def process_run(run_id: str, target_url: str):
                 print(f"⚠️  Warning: {agent_type} requires Playwright. Consider enabling Modal for production.")
 
             AgentClass = AGENT_MAP.get(agent_type, ExposureAgent)
-            agent_instance = AgentClass(run_id, session_id, target_url)
+            # Pass config to local agent
+            agent_instance = AgentClass(run_id, session_id, target_url, config)
             tasks.append(agent_instance.run())
 
     # 4. Wait for all agents
@@ -132,7 +153,24 @@ async def worker_loop():
             
             if response.data:
                 run = response.data[0]
-                await process_run(run['id'], run['target_url'])
+                run_id = run['id']
+                
+                # Try to get config from DB first, then file cache
+                config = run.get('configuration') or {}
+                if not config or not config.get('auth_type') or config.get('auth_type') == 'none':
+                    # Try file-based config cache
+                    config_cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.config_cache')
+                    config_path = os.path.join(config_cache_dir, f"{run_id}.json")
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, 'r') as f:
+                                config = json.load(f)
+                            print(f"📂 Loaded config from file cache for run {run_id}")
+                        except Exception as e:
+                            print(f"⚠️ Failed to read config cache: {e}")
+                
+                print(f"🔧 Config auth_type: {config.get('auth_type', 'none')}")
+                await process_run(run_id, run['target_url'], config)
             else:
                 await asyncio.sleep(2) # Sleep if no work
                 

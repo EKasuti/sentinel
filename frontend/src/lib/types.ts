@@ -7,6 +7,7 @@ export interface SecurityRun {
     target_url: string;
     started_at?: string;
     ended_at?: string;
+    configuration?: any;
 }
 
 export interface AgentSession {
@@ -33,9 +34,15 @@ export interface Finding {
     id: string;
     run_id: string;
     agent_type: string;
-    severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    severity: 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
     title: string;
     evidence: string;
     recommendation: string;
     created_at: string;
+    screenshots?: {
+        url: string;
+        timestamp: string;
+        caption: string;
+        highlight?: { x: number; y: number; width: number; height: number };
+    }[];
 }

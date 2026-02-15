@@ -49,11 +49,11 @@ secrets = modal.Secret.from_dict({
     cpu=2.0,
     memory=2048
 )
-async def run_exposure_agent(run_id: str, session_id: str, target_url: str):
+async def run_exposure_agent(run_id: str, session_id: str, target_url: str, config: dict = None):
     """Run ExposureAgent on Modal"""
     from agents.exposure import ExposureAgent
 
-    agent = ExposureAgent(run_id, session_id, target_url)
+    agent = ExposureAgent(run_id, session_id, target_url, config)
     await agent.run()
     return {"status": "completed", "session_id": session_id}
 
@@ -65,11 +65,11 @@ async def run_exposure_agent(run_id: str, session_id: str, target_url: str):
     cpu=2.0,
     memory=2048
 )
-async def run_auth_abuse_agent(run_id: str, session_id: str, target_url: str):
+async def run_auth_abuse_agent(run_id: str, session_id: str, target_url: str, config: dict = None):
     """Run AuthAbuseAgent on Modal"""
     from agents.auth_abuse import AuthAbuseAgent
 
-    agent = AuthAbuseAgent(run_id, session_id, target_url)
+    agent = AuthAbuseAgent(run_id, session_id, target_url, config)
     await agent.run()
     return {"status": "completed", "session_id": session_id}
 
@@ -81,11 +81,11 @@ async def run_auth_abuse_agent(run_id: str, session_id: str, target_url: str):
     cpu=2.0,
     memory=2048
 )
-async def run_llm_analysis_agent(run_id: str, session_id: str, target_url: str):
+async def run_llm_analysis_agent(run_id: str, session_id: str, target_url: str, config: dict = None):
     """Run LLMAnalysisAgent on Modal"""
     from agents.llm_analysis import LLMAnalysisAgent
 
-    agent = LLMAnalysisAgent(run_id, session_id, target_url)
+    agent = LLMAnalysisAgent(run_id, session_id, target_url, config)
     await agent.run()
     return {"status": "completed", "session_id": session_id}
 
@@ -97,11 +97,11 @@ async def run_llm_analysis_agent(run_id: str, session_id: str, target_url: str):
     cpu=2.0,
     memory=4096  # More memory for red team
 )
-async def run_red_team_agent(run_id: str, session_id: str, target_url: str):
+async def run_red_team_agent(run_id: str, session_id: str, target_url: str, config: dict = None):
     """Run RedTeamAgent on Modal"""
     from agents.red_team import RedTeamAgent
 
-    agent = RedTeamAgent(run_id, session_id, target_url)
+    agent = RedTeamAgent(run_id, session_id, target_url, config)
     await agent.run()
     return {"status": "completed", "session_id": session_id}
 
@@ -121,11 +121,11 @@ async def run_red_team_agent(run_id: str, session_id: str, target_url: str):
     cpu=1.0,
     memory=512
 )
-async def run_headers_agent(run_id: str, session_id: str, target_url: str):
+async def run_headers_agent(run_id: str, session_id: str, target_url: str, config: dict = None):
     """Run HeadersAgent on Modal (lightweight)"""
     from agents.headers import HeadersAgent
 
-    agent = HeadersAgent(run_id, session_id, target_url)
+    agent = HeadersAgent(run_id, session_id, target_url, config)
     await agent.run()
     return {"status": "completed", "session_id": session_id}
 
@@ -137,11 +137,11 @@ async def run_headers_agent(run_id: str, session_id: str, target_url: str):
     cpu=2.0,
     memory=2048
 )
-async def run_sqli_agent(run_id: str, session_id: str, target_url: str):
+async def run_sqli_agent(run_id: str, session_id: str, target_url: str, config: dict = None):
     """Run SQLiAgent on Modal"""
     from agents.sqli import SQLiAgent
 
-    agent = SQLiAgent(run_id, session_id, target_url)
+    agent = SQLiAgent(run_id, session_id, target_url, config)
     await agent.run()
     return {"status": "completed", "session_id": session_id}
 
@@ -153,11 +153,11 @@ async def run_sqli_agent(run_id: str, session_id: str, target_url: str):
     cpu=2.0,
     memory=2048
 )
-async def run_xss_agent(run_id: str, session_id: str, target_url: str):
+async def run_xss_agent(run_id: str, session_id: str, target_url: str, config: dict = None):
     """Run XSSAgent on Modal"""
     from agents.xss import XSSAgent
 
-    agent = XSSAgent(run_id, session_id, target_url)
+    agent = XSSAgent(run_id, session_id, target_url, config)
     await agent.run()
     return {"status": "completed", "session_id": session_id}
 

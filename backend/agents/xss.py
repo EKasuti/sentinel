@@ -15,6 +15,9 @@ class XSSAgent(BaseAgent):
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Sentinel/1.0"
             )
             page = await context.new_page()
+            
+            # Authenticate if credentials provided
+            await self.login(page)
 
             # Detection state
             self.vulnerable = False
@@ -30,7 +33,7 @@ class XSSAgent(BaseAgent):
             page.on("dialog", lambda d: asyncio.create_task(handle_dialog(d)))
 
             try:
-                # 1. Test URL Parameters
+                # 1. Test URL Parameters on target URL
                 parsed = urllib.parse.urlparse(self.target_url)
                 params = urllib.parse.parse_qs(parsed.query)
                 
@@ -46,7 +49,7 @@ class XSSAgent(BaseAgent):
                         fuzzed_url = parsed._replace(query=new_query).geturl()
                         
                         await page.goto(fuzzed_url)
-                        await asyncio.sleep(1) # Wait for execution
+                        await asyncio.sleep(1)
 
                         if self.vulnerable:
                             await self.save_screenshot(page, f"XSS Found in Param: {param}")
@@ -56,41 +59,76 @@ class XSSAgent(BaseAgent):
                                 evidence=f"Vulnerability found in `{param}` parameter.\nURL: {fuzzed_url}\nPayload: {payload}",
                                 recommendation="Sanitize all user inputs, use innerText instead of innerHTML, and implement a strong CSP."
                             )
-                            self.vulnerable = False # Reset
+                            self.vulnerable = False
 
-                # 2. Test Form Inputs
-                await page.goto(self.target_url)
-                await self.update_progress(50)
+                # 2. Crawl internal pages to discover forms/inputs
+                await page.goto(self.target_url, wait_until="domcontentloaded", timeout=15000)
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=8000)
+                except:
+                    pass
 
-                inputs = await page.query_selector_all("input[type='text'], input:not([type]), textarea")
-                if inputs:
-                    await self.emit_event("INFO", f"Found {len(inputs)} input fields. Testing for XSS...")
-                    for i, input_el in enumerate(inputs):
-                        canary = "Sent" + ''.join(random.choices(string.ascii_letters, k=6))
-                        payload = f"<script>alert('{canary}')</script>"
+                # Collect internal URLs from the current page
+                base_domain = urllib.parse.urlparse(self.target_url).netloc
+                discovered_urls = set()
+                discovered_urls.add(self.target_url)
+                
+                links = await page.query_selector_all("a[href]")
+                for link in links:
+                    href = await link.get_attribute("href")
+                    if href:
+                        full_url = urllib.parse.urljoin(self.target_url, href)
+                        parsed_link = urllib.parse.urlparse(full_url)
+                        if parsed_link.netloc == base_domain and parsed_link.scheme in ("http", "https"):
+                            discovered_urls.add(full_url.split('#')[0].split('?')[0])  # Remove fragments/params
+                
+                pages_to_test = list(discovered_urls)[:10]  # Cap at 10 pages
+                await self.emit_event("INFO", f"Discovered {len(pages_to_test)} pages to test for XSS.")
+                await self.update_progress(30)
 
-                        # Try to fill and submit
+                # 3. Test Form Inputs on each discovered page
+                for page_idx, test_url in enumerate(pages_to_test):
+                    try:
+                        await page.goto(test_url, wait_until="domcontentloaded", timeout=15000)
                         try:
-                            await input_el.fill(payload)
-                            await input_el.press("Enter")
-                            await asyncio.sleep(1.5)
-
-                            if self.vulnerable:
-                                await self.save_screenshot(page, f"XSS Found in Form Input {i}")
-                                await self.report_finding(
-                                    severity="HIGH",
-                                    title="Stored or Reflected XSS in Form",
-                                    evidence=f"Vulnerability found in form input field #{i}.\nPayload: {payload}",
-                                    recommendation="Apply context-aware output encoding and use modern web frameworks that auto-escape data."
-                                )
-                                self.vulnerable = False
+                            await page.wait_for_load_state("networkidle", timeout=5000)
                         except:
-                            continue
+                            pass
+                    except:
+                        continue
+
+                    inputs = await page.query_selector_all("input[type='text'], input[type='search'], input:not([type]), textarea")
+                    if inputs:
+                        await self.emit_event("INFO", f"[{test_url}] Found {len(inputs)} input fields. Testing for XSS...")
+                        for i, input_el in enumerate(inputs[:5]):  # Cap at 5 inputs per page
+                            canary = "Sent" + ''.join(random.choices(string.ascii_letters, k=6))
+                            payload = f"<script>alert('{canary}')</script>"
+
+                            try:
+                                await input_el.fill(payload)
+                                await input_el.press("Enter")
+                                await asyncio.sleep(1.5)
+
+                                if self.vulnerable:
+                                    await self.save_screenshot(page, f"XSS Found: {test_url} Input {i}")
+                                    await self.report_finding(
+                                        severity="HIGH",
+                                        title="Stored or Reflected XSS in Form",
+                                        evidence=f"Vulnerability found on {test_url}, form input #{i}.\nPayload: {payload}",
+                                        recommendation="Apply context-aware output encoding and use modern web frameworks that auto-escape data."
+                                    )
+                                    self.vulnerable = False
+                            except:
+                                continue
+                    
+                    progress = 30 + int((page_idx / max(len(pages_to_test), 1)) * 60)
+                    await self.update_progress(min(progress, 90))
 
                 await self.update_progress(100)
-                await self.emit_event("SUCCESS", "XSS Scan completed.")
+                await self.emit_event("SUCCESS", f"XSS Scan completed. Tested {len(pages_to_test)} pages.")
 
             except Exception as e:
                 await self.emit_event("ERROR", f"XSS Agent failed: {str(e)}")
             finally:
                 await browser.close()
+

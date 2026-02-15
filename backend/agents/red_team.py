@@ -7,11 +7,14 @@ from .base import BaseAgent
 import os
 
 class RedTeamAgent(BaseAgent):
-    def __init__(self, run_id: str, session_id: str, target_url: str):
-        super().__init__(run_id, session_id, target_url)
+    def __init__(self, run_id: str, session_id: str, target_url: str, config: dict = None):
+        super().__init__(run_id, session_id, target_url, config)
         self.openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.max_steps = 10 
+        self.max_steps = 20
         self.history = []
+        self.screenshots = []
+        self.console_logs = []
+        self.network_errors = []
 
     async def execute(self):
         await self.update_status("RUNNING")
@@ -26,11 +29,35 @@ class RedTeamAgent(BaseAgent):
                 viewport={'width': 1280, 'height': 720}
             )
             self.page = await self.context.new_page()
+            
+            # Authenticate if credentials provided
+            await self.login(self.page)
+
+            # --- DevTools Monitoring ---
+            async def handle_console(msg):
+                if msg.type in ['error', 'warning']:
+                    entry = f"CONSOLE [{msg.type.upper()}]: {msg.text}"
+                    self.console_logs.append(entry)
+                    await self.emit_event("INFO", entry)
+
+            async def handle_response(response):
+                if response.status >= 400:
+                    entry = f"NETWORK [{response.status}]: {response.url}"
+                    self.network_errors.append(entry)
+                    await self.emit_event("WARNING", entry)
+
+            self.page.on("console", lambda msg: asyncio.create_task(handle_console(msg)))
+            self.page.on("response", lambda response: asyncio.create_task(handle_response(response)))
+            # ---------------------------
 
             # Initial Navigation
             try:
                 await self.emit_event("INFO", f"Navigating to {self.target_url}")
                 await self.page.goto(self.target_url, timeout=30000, wait_until="domcontentloaded")
+                try:
+                    await self.page.wait_for_load_state("networkidle", timeout=8000)
+                except:
+                    pass  # SPA may never reach networkidle
             except Exception as e:
                 await self.emit_event("ERROR", f"Initial navigation failed: {str(e)}")
                 await browser.close()
@@ -56,14 +83,16 @@ class RedTeamAgent(BaseAgent):
                 
                 if action['tool'] == 'finish':
                     await self.emit_event("SUCCESS", f"Mission Complete: {action.get('reason', 'Done')}")
-                    await self.save_screenshot(self.page, "Final State")
+                    final_shot = await self.save_screenshot(self.page, "Final State")
+                    if final_shot: self.screenshots.append(final_shot)
                     break
                 
                 await self._execute_tool(action)
                 
                 # Periodic screenshot to show progress
                 if step % 2 == 0:
-                    await self.save_screenshot(self.page, f"Exploration Step {step}")
+                    step_shot = await self.save_screenshot(self.page, f"Exploration Step {step}")
+                    if step_shot: self.screenshots.append(step_shot)
 
                 # Report if interesting
                 if action.get('finding'):
@@ -71,7 +100,8 @@ class RedTeamAgent(BaseAgent):
                         severity=action['finding']['severity'],
                         title=action['finding']['title'],
                         evidence=action['finding']['evidence'],
-                        recommendation="Review automated red team findings."
+                        recommendation="Review automated red team findings.",
+                        screenshots=self.screenshots
                     )
             
             # Close context first to save video
@@ -98,10 +128,20 @@ class RedTeamAgent(BaseAgent):
 
     async def _decide_next_action(self, observation: str) -> Dict[str, Any]:
         prompt = f"""
-        You are an autonomous Senior Red Team Engineer. Your goal is to methodically explore the target website for security vulnerabilities while maintaining a high signal-to-noise ratio.
-        
         ### Persona:
-        You behave like a Senior Security Engineer at a top tech company. You value evidence over suspicion and avoid flagging standard features as vulnerabilities.
+        You are an autonomous Senior Red Team Engineer. Your goal is to methodically explore the target website for security vulnerabilities while maintaining a high signal-to-noise ratio.
+        The user is AUTHENTICATED (already logged in). Focus on exploring INTERNAL/AUTHENTICATED pages.
+        
+        CRITICAL INSTRUCTION: CLICK EVERYTHING.
+        You must verify what signals are being sent and received in the DevTools.
+        Check the 'Console Logs' and 'Network Errors' below to see what your actions triggered.
+        
+        ### Current State:
+        {observation}
+
+        ### DevTools Observations (Last 5 steps):
+        Console Errors: {json.dumps(self.console_logs[-5:], indent=2)}
+        Network Errors: {json.dumps(self.network_errors[-5:], indent=2)}
 
         ### Current State:
         {observation}
@@ -117,9 +157,10 @@ class RedTeamAgent(BaseAgent):
         - report(severity: str, title: str, evidence: str): Log a high-signal finding ONLY when a vulnerability is confirmed (e.g., error leakage, successful script execution).
 
         ### Strategy:
-        1. **Explore**: Identify entry points like search boxes, login forms, or URL parameters.
-        2. **Test**: Systematically test for vulnerabilities like SQLi, XSS, or Auth Bypass.
-        3. **Verify**: Only report if you see clear evidence of success (e.g., database error messages, reflected unescaped payloads).
+        1. **Explore**: Methodically CLICK on every interactive element to trigger underlying logic.
+        2. **Monitor**: Watch the Console and Network logs provided above. If an action causes a 500 error or stack trace, INVESTIGATE IT.
+        3. **Test**: Use available tools to fuzz inputs.
+        4. **Verify**: Report confirmation of vulnerabilities based on DevTools feedback (e.g., "Clicked button X and received 500 Internal Server Error with traceback").
         4. **Signal**: Do NOT flag normal login pages, standard headers, or expected "admin" links as vulnerabilities unless they are clearly unprotected or leaking data.
 
         ### Response Format:
@@ -134,7 +175,7 @@ class RedTeamAgent(BaseAgent):
         
         try:
             response = await self.openai.chat.completions.create(
-                model="o1-preview",
+                model="gpt-4o",
                 messages=[{"role": "user", "content": prompt}]
             )
             content = response.choices[0].message.content
@@ -168,7 +209,10 @@ class RedTeamAgent(BaseAgent):
                     # force=True bypasses the "element is intercepted by overlay" check
                     await self.page.wait_for_timeout(1000) # Wait for animations
                     await els[idx].click(timeout=5000, force=True)
-                    await self.page.wait_for_load_state("networkidle", timeout=5000)
+                    try:
+                        await self.page.wait_for_load_state("networkidle", timeout=8000)
+                    except:
+                        pass  # SPA may not reach networkidle
             
             elif tool == 'type':
                 idx = args['element_index']
@@ -179,10 +223,17 @@ class RedTeamAgent(BaseAgent):
                     await els[idx].fill(text, force=True)
                     # Often need to hit enter
                     await els[idx].press("Enter")
-                    await self.page.wait_for_load_state("networkidle", timeout=5000)
+                    try:
+                        await self.page.wait_for_load_state("networkidle", timeout=8000)
+                    except:
+                        pass
             
             elif tool == 'navigate':
-                await self.page.goto(args['url'])
+                await self.page.goto(args['url'], wait_until="domcontentloaded", timeout=15000)
+                try:
+                    await self.page.wait_for_load_state("networkidle", timeout=8000)
+                except:
+                    pass
 
             elif tool == 'report':
                 pass # Handled in main loop
