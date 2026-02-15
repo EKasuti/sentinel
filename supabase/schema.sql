@@ -66,3 +66,7 @@ CREATE POLICY "Enable all for public" ON run_events FOR ALL USING (true);
 
 ALTER TABLE findings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Enable all for public" ON findings FOR ALL USING (true);
+
+-- Migrations
+ALTER TABLE security_runs ADD COLUMN IF NOT EXISTS configuration JSONB;
+

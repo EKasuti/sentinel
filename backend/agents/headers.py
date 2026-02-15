@@ -17,10 +17,10 @@ class HeadersAgent(BaseAgent):
                     # Check 1: HSTS
                     if 'Strict-Transport-Security' not in headers:
                         await self.report_finding(
-                            severity="MEDIUM",
+                            severity="LOW",
                             title="Missing HSTS Header",
                             evidence="Strict-Transport-Security header is missing.",
-                            recommendation="Enable HSTS to prevent downgrade attacks."
+                            recommendation="Enable HSTS (Strict-Transport-Security) to prevent protocol downgrade attacks and cookie hijacking."
                         )
                     else:
                         await self.emit_event("INFO", "HSTS Header present.")
@@ -30,19 +30,28 @@ class HeadersAgent(BaseAgent):
                         await self.report_finding(
                             severity="LOW",
                             title="Clickjacking Protection Missing",
-                            evidence="X-Frame-Options and CSP frame-ancestors missing.",
-                            recommendation="Set X-Frame-Options: DENY or SAMEORIGIN."
+                            evidence="X-Frame-Options and Content-Security-Policy (frame-ancestors) headers are missing.",
+                            recommendation="Implement X-Frame-Options (DENY/SAMEORIGIN) or CSP frame-ancestors to protect against clickjacking."
+                        )
+
+                    # Check 3: X-Content-Type-Options
+                    if 'X-Content-Type-Options' not in headers:
+                        await self.report_finding(
+                            severity="LOW",
+                            title="Missing X-Content-Type-Options Header",
+                            evidence="X-Content-Type-Options: nosniff header is missing.",
+                            recommendation="Set X-Content-Type-Options: nosniff to prevent browser MIME-type sniffing."
                         )
 
                     await self.update_progress(60)
                     
-                    # Check 3: Server Version Disclosure
+                    # Check 4: Server Version Disclosure
                     if 'Server' in headers:
                          await self.report_finding(
                             severity="LOW",
                             title="Server Banner Disclosure",
                             evidence=f"Server header revealed: {headers['Server']}",
-                            recommendation="Suppress Server header to hide version info."
+                            recommendation="Suppress or obscure the 'Server' header to avoid disclosing backend infrastructure details."
                         )
             
             await self.update_progress(90)
