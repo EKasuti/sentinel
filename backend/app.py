@@ -51,7 +51,7 @@ def start_run():
             return jsonify({"error": "Request body is required"}), 400
 
         target_url = data.get('target_url')
-        agents = data.get('agents', ['exposure', 'headers_tls'])
+        agents = data.get('agents', ['spider', 'exposure', 'headers_tls', 'cors', 'portscan'])
 
         if not target_url:
             return jsonify({"error": "target_url is required"}), 400

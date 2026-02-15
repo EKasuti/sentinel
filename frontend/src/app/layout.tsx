@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sentinel | Autonomous Blue Team",
-  description: "AI-powered Vulnerability Scanner & Blue Team Orchestrator",
+  title: "Sentinel | Autonomous Security Intelligence",
+  description: "Deploy 10 AI agents to autonomously discover vulnerabilities in any web application. Spider crawls, fuzz inputs, probe APIs, and chain exploits — all in real-time.",
 };
 
 export default function RootLayout({

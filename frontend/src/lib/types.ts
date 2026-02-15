@@ -23,7 +23,7 @@ export interface RunEvent {
     id: string;
     run_id: string;
     agent_type: string;
-    event_type: 'INFO' | 'WARNING' | 'ERROR' | 'SUCCESS' | 'SCREENSHOT';
+    event_type: 'INFO' | 'WARNING' | 'ERROR' | 'SUCCESS' | 'SCREENSHOT' | 'ATTACK_SURFACE';
     message: string;
     data?: any;
     created_at: string;

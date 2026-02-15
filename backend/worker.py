@@ -2,47 +2,24 @@ import asyncio
 import time
 import os
 from db import supabase
-from agents.exposure import ExposureAgent
-from agents.headers import HeadersAgent
+from agents.exposure_v2 import ExposureAgent
+from agents.headers_v2 import HeadersAgent
 from agents.auth_abuse import AuthAbuseAgent
 from agents.llm_analysis import LLMAnalysisAgent
 from agents.sqli import SQLiAgent
 from agents.xss import XSSAgent
 from agents.red_team import RedTeamAgent
-
-# Check if we should use Modal (production) or local execution (development)
-USE_MODAL = os.getenv('USE_MODAL', 'false').lower() == 'true'
-
-if USE_MODAL:
-    try:
-        import modal
-        # Look up the deployed Modal functions
-        MODAL_APP_NAME = os.getenv('MODAL_APP_NAME', 'ekasuti')
-
-        # Use from_name to get references to deployed functions
-        MODAL_AGENT_MAP = {
-            "exposure": modal.Function.from_name(MODAL_APP_NAME, "run_exposure_agent"),
-            "auth_abuse": modal.Function.from_name(MODAL_APP_NAME, "run_auth_abuse_agent"),
-            "llm_analysis": modal.Function.from_name(MODAL_APP_NAME, "run_llm_analysis_agent"),
-            "red_team": modal.Function.from_name(MODAL_APP_NAME, "run_red_team_agent"),
-            "headers_tls": modal.Function.from_name(MODAL_APP_NAME, "run_headers_agent"),
-            "sqli": modal.Function.from_name(MODAL_APP_NAME, "run_sqli_agent"),
-            "xss": modal.Function.from_name(MODAL_APP_NAME, "run_xss_agent"),
-        }
-        print("✅ Modal integration enabled - agents will run on Modal")
-    except ImportError:
-        print("⚠️  Modal not installed. Install with: pip install modal")
-        print("⚠️  Falling back to local execution")
-        USE_MODAL = False
-    except Exception as e:
-        print(f"⚠️  Modal setup failed: {e}")
-        print("⚠️  Falling back to local execution")
-        USE_MODAL = False
+from agents.spider import SpiderAgent
+from agents.cors import CORSAgent
+from agents.portscan import PortScanAgent
 
 # Mapping string agent_type to Class (local execution)
 AGENT_MAP = {
+    "spider": SpiderAgent,
     "exposure": ExposureAgent,
     "headers_tls": HeadersAgent,
+    "cors": CORSAgent,
+    "portscan": PortScanAgent,
     "auth_abuse": AuthAbuseAgent,
     "llm_analysis": LLMAnalysisAgent,
     "sqli": SQLiAgent,
@@ -50,9 +27,6 @@ AGENT_MAP = {
     "red_team": RedTeamAgent,
     "custom": ExposureAgent
 }
-
-# Agents that require Playwright (should use Modal in production)
-PLAYWRIGHT_AGENTS = ["exposure", "auth_abuse", "llm_analysis", "red_team"]
 
 async def process_run(run_id: str, target_url: str):
     print(f"Processing Run: {run_id} for {target_url}")
@@ -65,68 +39,55 @@ async def process_run(run_id: str, target_url: str):
     sessions_data = sessions_response.data
     print(f"DEBUG: Found {len(sessions_data)} sessions for run {run_id}")
 
-    tasks = []
-
-    # 3. Launch Agents
+    # 3. Launch Agents (Local Execution)
+    # Spider runs FIRST to map attack surface, then non-LLM, then LLM agents
+    SPIDER_AGENTS = {"spider"}
+    LLM_AGENTS = {"llm_analysis", "red_team"}
     
-    # CASE A: USE MODAL (Remote Execution)
-    if USE_MODAL:
-        for session in sessions_data:
-            agent_type = session['agent_type']
-            session_id = session['id']
-            if agent_type in MODAL_AGENT_MAP:
-                print(f"🚀 Launching {agent_type} agent on Modal (session: {session_id})")
-                modal_func = MODAL_AGENT_MAP[agent_type]
-                tasks.append(modal_func.remote.aio(run_id, session_id, target_url))
-            else:
-                 print(f"⚠️  Warning: {agent_type} not found in Modal map, skipping.")
+    spider_tasks = []
+    non_llm_tasks = []
+    llm_sessions = []
+
+    for session in sessions_data:
+        agent_type = session['agent_type']
+        session_id = session['id']
         
-        # Wait for all modal tasks
-        if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    print(f"❌ Modal task failed: {result}")
-                else:
-                    print(f"✅ Modal task completed: {result}")
-
-    # CASE B: LOCAL EXECUTION (Sequential LLM to avoid rate limiting)
-    else:
-        # Separate LLM-heavy agents to avoid Gemini rate limit contention
-        LLM_AGENTS = {"llm_analysis", "red_team"}
-        non_llm_tasks = []
-        llm_sessions = []
-
-        for session in sessions_data:
-            agent_type = session['agent_type']
-            session_id = session['id']
-            
-            print(f"💻 Launching {agent_type} agent locally (session: {session_id})")
-            AgentClass = AGENT_MAP.get(agent_type, ExposureAgent)
-            agent_instance = AgentClass(run_id, session_id, target_url)
-
-            if agent_type in LLM_AGENTS:
-                llm_sessions.append(agent_instance)
-            else:
-                non_llm_tasks.append(agent_instance.run())
+        print(f"💻 Launching {agent_type} agent locally (session: {session_id})")
         
-        # 1. Run non-LLM agents concurrently (these are fast, no rate limit issues)
-        if non_llm_tasks:
-            await asyncio.gather(*non_llm_tasks)
+        AgentClass = AGENT_MAP.get(agent_type, ExposureAgent)
+        agent_instance = AgentClass(run_id, session_id, target_url)
 
-        # 2. Run LLM agents sequentially to avoid RPM contention
-        for agent in llm_sessions:
-            try:
-                await agent.run()
-            except Exception as e:
-                print(f"LLM Agent {agent.__class__.__name__} failed: {e}")
+        if agent_type in SPIDER_AGENTS:
+            spider_tasks.append(agent_instance)
+        elif agent_type in LLM_AGENTS:
+            llm_sessions.append(agent_instance)
+        else:
+            non_llm_tasks.append(agent_instance.run())
+    
+    # Phase 1: Run spider agent first (maps attack surface)
+    for spider in spider_tasks:
+        try:
+            await spider.run()
+        except Exception as e:
+            print(f"Spider Agent failed: {e}")
+    
+    # Phase 2: Run non-LLM agents concurrently (these are fast, no rate limit issues)
+    if non_llm_tasks:
+        await asyncio.gather(*non_llm_tasks)
+
+    # Run LLM agents sequentially to avoid RPM contention
+    for agent in llm_sessions:
+        try:
+            await agent.run()
+        except Exception as e:
+            print(f"LLM Agent {agent.__class__.__name__} failed: {e}")
 
     # 5. Update Run Status to COMPLETED
     supabase.table('security_runs').update({"status": "COMPLETED", "ended_at": "now()"}).eq("id", run_id).execute()
     print(f"Run {run_id} Completed")
 
 async def worker_loop():
-    print("Worker started. Polling for QUEUED runs...")
+    print("Worker started (Local Mode). Polling for QUEUED runs...")
     while True:
         try:
             # Poll for 1 queued run
