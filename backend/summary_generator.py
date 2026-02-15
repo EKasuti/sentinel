@@ -29,15 +29,23 @@ def generate_run_summary(run_id: str, target_url: str):
         findings_str = "\n".join(finding_texts)
         
         prompt = f"""
-        You are a Lead Security Engineer. A security scan was just performed on {target_url}.
-        
-        Here are the raw findings:
+        You are a Senior Staff Security Engineer at Google, responsible for summarizing security assessments for executive leadership.
+        A recent security scan on {target_url} identified specific vulnerabilities.
+
+        ### Findings:
         {findings_str}
+
+        ### Task:
+        Draft a high-impact **Executive Security Summary** (approx. 200 words).
         
-        Please provide a professional Executive Summary (max 3 paragraphs) of the security posture.
-        Highlight the most critical risks and provide a general recommendation.
-        Do not list every single finding, but synthesize the overall risk.
-        Format as plain text or Markdown.
+        ### Guidelines:
+        1. **Tone**: Professional, objective, and authoritative. Avoid alarmist language.
+        2. **Structure**:
+           - **Risk Overview**: A concise statement on the overall security posture.
+           - **Critical Issues**: Highlight the top 1-2 most dangerous findings (if any) and their potential business impact (e.g., data breach, financial loss).
+           - **Strategic Recommendations**: Provide high-level, architectural guidance for remediation.
+        3. **Formatting**: Use Markdown with bullet points for readability.
+        4. **Refusal**: If no meaningful risks were found, clearly state that the security posture appears robust based on this automated scan.
         """
 
         # 3. Call Gemini

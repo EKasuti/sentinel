@@ -35,20 +35,40 @@ class LLMAnalysisAgent(BaseAgent):
                 await self.update_progress(40)
 
                 prompt = f"""
-                You are an expert offensive security engineer. Analyze the following web page text for:
-                1. Business Logic Flaws (e.g. "Buy for $0", "Admin link exposed")
-                2. PII Leaks (Emails, Phone numbers, API Keys)
-                3. Suspicious code comments or debug info.
-                
+                You are a Principal Security Engineer conducting a security assessment of {self.target_url}. 
+                Your goal is to identify *actionable* security vulnerabilities with high precision and minimal false positives.
+
+                Analyze the extracted page content below for the following categories:
+
+                1. **Business Logic & Authorization Flaws**:
+                   - Broken access controls (e.g., visible "Admin" links for non-admins).
+                   - Pricing/Payment manipulation risks.
+                   - Potentially dangerous debug features exposed in production.
+
+                2. **Sensitive Information Exposure (High Precision)**:
+                   - **CRITICAL**: AWS Access Keys (AKIA...), Stripe Secret Keys (sk_live...), Private Keys.
+                   - **IGNORE / FALSE POSITIVES**: Do NOT report the following as security issues unless they are explicitly labeled as "secrets":
+                     - **Firebase API Keys** (e.g., `AIza...`): These are public by design.
+                     - **Google Maps API Keys**: Generally public.
+                     - **Stripe Publishable Keys** (`pk_live...`).
+                     - **Analytics IDs** (GA, Segment).
+
+                3. **Suspicious Code / Comments**:
+                   - Leftover "TODO" comments related to security.
+                   - Stack traces or debug information leaked in the DOM.
+
+                ### Context:
                 Target URL: {self.target_url}
-                
-                Page Content:
+
+                ### Page Content (Truncated):
                 {content}
+
+                ### Instructions:
+                - Think step-by-step about whether a finding is actually a vulnerability.
+                - If you find a Firebase Key or other public identifier, IGNORE IT.
+                - Return a JSON object with a list of "findings".
                 
-                Return a JSON object with a list of "findings". 
-                Each finding should have: severity (LOW, MEDIUM, HIGH, CRITICAL), title, evidence, recommendation.
-                If nothing found, return empty list.
-                JSON Format: {{ "findings": [ ... ] }}
+                JSON Format: {{ "findings": [ {{ "severity": "LOW|MEDIUM|HIGH|CRITICAL", "title": "...", "evidence": "...", "recommendation": "..." }} ] }}
                 """
 
                 response = await self.client.chat.completions.create(
