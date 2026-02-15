@@ -7,6 +7,8 @@ import { AgentSession, RunEvent, Finding, SecurityRun } from "@/lib/types";
 import AgentStatusGrid from "@/components/AgentStatusGrid";
 import { AGENT_META, AGENT_TYPE_MAP } from "@/components/AgentStatusGrid";
 import AgentDetailModal from "@/components/AgentDetailModal";
+import ReportModal from "@/components/ReportModal";
+import Link from "next/link";
 import { Activity, Bug, ChevronDown, Radar } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import RunHeader from "@/components/RunHeader";
@@ -20,6 +22,7 @@ export default function RunDetails() {
     const [sessions, setSessions] = useState<AgentSession[]>([]);
     const [events, setEvents] = useState<RunEvent[]>([]);
     const [findings, setFindings] = useState<Finding[]>([]);
+    const [showReport, setShowReport] = useState(false);
     const [filterAgent, setFilterAgent] = useState<string>("ALL");
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -196,6 +199,14 @@ export default function RunDetails() {
                 onReRun={handleReRun}
                 onCancel={handleCancel}
                 isCancelling={cancelling}
+                onShowReport={() => setShowReport(true)}
+            />
+
+            <ReportModal
+                isOpen={showReport}
+                onClose={() => setShowReport(false)}
+                runId={runId}
+                targetUrl={run?.target_url || ''}
             />
 
 

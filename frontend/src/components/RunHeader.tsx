@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Shield, Bug, Play, Globe, RotateCw, XCircle, ArrowLeft } from "lucide-react";
+import { Shield, Bug, Play, Globe, RotateCw, XCircle, ArrowLeft, FileText } from "lucide-react";
 
 interface RunHeaderProps {
     run: any;
@@ -10,6 +10,7 @@ interface RunHeaderProps {
     onReRun: () => void;
     onCancel: () => void;
     isCancelling: boolean;
+    onShowReport: () => void;
 }
 
 export default function RunHeader({
@@ -20,7 +21,8 @@ export default function RunHeader({
     securityScore,
     onReRun,
     onCancel,
-    isCancelling
+    isCancelling,
+    onShowReport
 }: RunHeaderProps) {
     const isRunning = run?.status === 'RUNNING';
     const criticals = findings.filter(f => f.severity === 'CRITICAL').length;
@@ -124,8 +126,8 @@ export default function RunHeader({
                                     />
                                 </svg>
                                 <span className={`absolute text-sm font-bold ${securityScore >= 80 ? 'text-emerald-400' :
-                                        securityScore >= 50 ? 'text-yellow-400' :
-                                            securityScore >= 25 ? 'text-orange-400' : 'text-red-400'
+                                    securityScore >= 50 ? 'text-yellow-400' :
+                                        securityScore >= 25 ? 'text-orange-400' : 'text-red-400'
                                     }`}>
                                     {securityScore}
                                 </span>
@@ -146,6 +148,14 @@ export default function RunHeader({
                             <Globe className="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" />
                             <span className="text-sm font-medium text-gray-300 group-hover:text-white">New Target</span>
                         </Link>
+
+                        <button
+                            onClick={onShowReport}
+                            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-400 transition-all group"
+                        >
+                            <FileText className="w-4 h-4" />
+                            <span className="text-sm font-medium">Report</span>
+                        </button>
 
                         {isRunning ? (
                             <button
