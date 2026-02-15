@@ -176,6 +176,22 @@ async def run_xss_agent(run_id: str, session_id: str, target_url: str):
     return {"status": "completed", "session_id": session_id}
 
 
+@app.function(
+    image=image,
+    secrets=[secrets],
+    timeout=600,
+    cpu=2.0,
+    memory=2048
+)
+async def run_broken_links_agent(run_id: str, session_id: str, target_url: str):
+    """Run BrokenLinkHijackAgent on Modal"""
+    from agents.broken_links import BrokenLinkHijackAgent
+
+    agent = BrokenLinkHijackAgent(run_id, session_id, target_url)
+    await agent.run()
+    return {"status": "completed", "session_id": session_id}
+
+
 # Mapping for worker to use
 MODAL_AGENT_MAP = {
     "exposure": run_exposure_agent,
@@ -185,4 +201,5 @@ MODAL_AGENT_MAP = {
     "headers_tls": run_headers_agent,
     "sqli": run_sqli_agent,
     "xss": run_xss_agent,
+    "broken_links": run_broken_links_agent,
 }
