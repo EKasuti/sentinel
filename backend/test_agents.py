@@ -17,6 +17,7 @@ from agents.exposure import ExposureAgent
 from agents.auth_abuse import AuthAbuseAgent
 from agents.llm_analysis import LLMAnalysisAgent
 from agents.broken_links import BrokenLinkHijackAgent
+from agents.cloud_leak import CloudLeakAgent
 
 class TestAgents(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -249,6 +250,72 @@ class TestAgents(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Broken Social Media Link (Hijacking Risk)", reported_titles)
             self.assertTrue(any("dead_user_123" in ev for ev in reported_evidence))
             self.assertFalse(any("valid_user" in ev for ev in reported_evidence))
+
+    async def test_cloud_leak_detection(self):
+        agent = CloudLeakAgent(self.run_id, self.session_id, self.target_url)
+
+        # Mock Playwright
+        mock_page = AsyncMock()
+        mock_page.content.return_value = "<html><body>Check our assets at my-leaky-bucket.s3.amazonaws.com</body></html>"
+        mock_page.evaluate.return_value = ["https://example.com/assets.js"]
+        mock_page.goto = AsyncMock()
+
+        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
+        mock_context.new_page.return_value = mock_page
+        mock_context.close = AsyncMock()
+        mock_browser.new_context.return_value = mock_context
+        mock_browser.close = AsyncMock()
+
+        mock_playwright = AsyncMock()
+        mock_playwright.chromium.launch.return_value = mock_browser
+        mock_playwright.__aenter__ = AsyncMock(return_value=mock_playwright)
+        mock_playwright.__aexit__ = AsyncMock()
+
+        # Mock aiohttp
+        mock_response_js = MagicMock()
+        mock_response_js.text = AsyncMock(return_value="const b = 'another-bucket.storage.googleapis.com';")
+        mock_response_js.__aenter__ = AsyncMock(return_value=mock_response_js)
+        mock_response_js.__aexit__ = AsyncMock()
+
+        mock_response_s3 = MagicMock()
+        mock_response_s3.text = AsyncMock(return_value="<ListBucketResult><Contents><Key>secret.txt</Key></Contents></ListBucketResult>")
+        mock_response_s3.__aenter__ = AsyncMock(return_value=mock_response_s3)
+        mock_response_s3.__aexit__ = AsyncMock()
+
+        mock_response_gcp = MagicMock()
+        mock_response_gcp.text = AsyncMock(return_value="Access Denied")
+        mock_response_gcp.__aenter__ = AsyncMock(return_value=mock_response_gcp)
+        mock_response_gcp.__aexit__ = AsyncMock()
+
+        mock_session = MagicMock()
+        def get_side_effect(url, **kwargs):
+            if "assets.js" in url:
+                return mock_response_js
+            if "my-leaky-bucket" in url:
+                return mock_response_s3
+            if "another-bucket" in url:
+                return mock_response_gcp
+            return MagicMock()
+
+        mock_session.get.side_effect = get_side_effect
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock()
+
+        with patch('agents.cloud_leak.async_playwright', return_value=mock_playwright), \
+             patch('aiohttp.ClientSession', return_value=mock_session):
+
+            agent.emit_event = AsyncMock()
+            agent.report_finding = AsyncMock()
+            agent.update_progress = AsyncMock()
+            agent.update_status = AsyncMock()
+
+            await agent.execute()
+
+            reported_titles = [call.kwargs['title'] for call in agent.report_finding.call_args_list]
+            self.assertIn("Publicly Accessible AWS S3 Bucket", reported_titles)
+            # GCP bucket was found but returned Access Denied, so it shouldn't be reported as HIGH
+            self.assertNotIn("Publicly Accessible Google Cloud Storage Bucket", reported_titles)
 
 if __name__ == '__main__':
     unittest.main()

@@ -192,6 +192,22 @@ async def run_broken_links_agent(run_id: str, session_id: str, target_url: str):
     return {"status": "completed", "session_id": session_id}
 
 
+@app.function(
+    image=image,
+    secrets=[secrets],
+    timeout=600,
+    cpu=2.0,
+    memory=2048
+)
+async def run_cloud_leak_agent(run_id: str, session_id: str, target_url: str):
+    """Run CloudLeakAgent on Modal"""
+    from agents.cloud_leak import CloudLeakAgent
+
+    agent = CloudLeakAgent(run_id, session_id, target_url)
+    await agent.run()
+    return {"status": "completed", "session_id": session_id}
+
+
 # Mapping for worker to use
 MODAL_AGENT_MAP = {
     "exposure": run_exposure_agent,
@@ -202,4 +218,5 @@ MODAL_AGENT_MAP = {
     "sqli": run_sqli_agent,
     "xss": run_xss_agent,
     "broken_links": run_broken_links_agent,
+    "cloud_leak": run_cloud_leak_agent,
 }
