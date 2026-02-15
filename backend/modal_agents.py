@@ -208,6 +208,54 @@ async def run_cloud_leak_agent(run_id: str, session_id: str, target_url: str):
     return {"status": "completed", "session_id": session_id}
 
 
+@app.function(
+    image=image,
+    secrets=[secrets],
+    timeout=900,
+    cpu=2.0,
+    memory=2048
+)
+async def run_omniscience_agent(run_id: str, session_id: str, target_url: str):
+    """Run OmniscienceAgent on Modal"""
+    from agents.omniscience import OmniscienceAgent
+
+    agent = OmniscienceAgent(run_id, session_id, target_url)
+    await agent.run()
+    return {"status": "completed", "session_id": session_id}
+
+
+@app.function(
+    image=image,
+    secrets=[secrets],
+    timeout=900,
+    cpu=2.0,
+    memory=2048
+)
+async def run_source_sorcerer_agent(run_id: str, session_id: str, target_url: str):
+    """Run SourceSorcererAgent on Modal"""
+    from agents.source_sorcerer import SourceSorcererAgent
+
+    agent = SourceSorcererAgent(run_id, session_id, target_url)
+    await agent.run()
+    return {"status": "completed", "session_id": session_id}
+
+
+@app.function(
+    image=image,
+    secrets=[secrets],
+    timeout=600,
+    cpu=2.0,
+    memory=2048
+)
+async def run_shadow_hunter_agent(run_id: str, session_id: str, target_url: str):
+    """Run ShadowHunterAgent on Modal"""
+    from agents.shadow_hunter import ShadowHunterAgent
+
+    agent = ShadowHunterAgent(run_id, session_id, target_url)
+    await agent.run()
+    return {"status": "completed", "session_id": session_id}
+
+
 # Mapping for worker to use
 MODAL_AGENT_MAP = {
     "exposure": run_exposure_agent,
@@ -219,4 +267,7 @@ MODAL_AGENT_MAP = {
     "xss": run_xss_agent,
     "broken_links": run_broken_links_agent,
     "cloud_leak": run_cloud_leak_agent,
+    "omniscience": run_omniscience_agent,
+    "source_sorcerer": run_source_sorcerer_agent,
+    "shadow_hunter": run_shadow_hunter_agent,
 }

@@ -18,6 +18,9 @@ from agents.auth_abuse import AuthAbuseAgent
 from agents.llm_analysis import LLMAnalysisAgent
 from agents.broken_links import BrokenLinkHijackAgent
 from agents.cloud_leak import CloudLeakAgent
+from agents.omniscience import OmniscienceAgent
+from agents.source_sorcerer import SourceSorcererAgent
+from agents.shadow_hunter import ShadowHunterAgent
 
 class TestAgents(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -316,6 +319,128 @@ class TestAgents(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Publicly Accessible AWS S3 Bucket", reported_titles)
             # GCP bucket was found but returned Access Denied, so it shouldn't be reported as HIGH
             self.assertNotIn("Publicly Accessible Google Cloud Storage Bucket", reported_titles)
+
+    async def test_omniscience_agent(self):
+        agent = OmniscienceAgent(self.run_id, self.session_id, self.target_url)
+
+        # Mock OpenAI
+        mock_choice = MagicMock()
+        mock_choice.message.content = '{"findings": [{"severity": "HIGH", "title": "Visual Leak", "evidence": "saw something", "recommendation": "fix it"}]}'
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+        agent.client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        # Mock Playwright
+        mock_page = AsyncMock()
+        mock_page.screenshot.return_value = b"fake-image"
+        mock_page.goto = AsyncMock()
+
+        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
+        mock_context.new_page.return_value = mock_page
+        mock_context.close = AsyncMock()
+        mock_browser.new_context.return_value = mock_context
+        mock_browser.close = AsyncMock()
+
+        mock_playwright = AsyncMock()
+        mock_playwright.chromium.launch.return_value = mock_browser
+        mock_playwright.__aenter__ = AsyncMock(return_value=mock_playwright)
+        mock_playwright.__aexit__ = AsyncMock()
+
+        with patch('agents.omniscience.async_playwright', return_value=mock_playwright):
+            agent.emit_event = AsyncMock()
+            agent.report_finding = AsyncMock()
+            agent.update_progress = AsyncMock()
+            agent.update_status = AsyncMock()
+
+            await agent.execute()
+
+            agent.report_finding.assert_called_once()
+            self.assertIn("[Vision] Visual Leak", agent.report_finding.call_args.kwargs['title'])
+
+    async def test_source_sorcerer_agent(self):
+        agent = SourceSorcererAgent(self.run_id, self.session_id, self.target_url)
+
+        # Mock OpenAI
+        mock_choice = MagicMock()
+        mock_choice.message.content = '{"findings": [{"severity": "HIGH", "title": "Hardcoded Key", "evidence": "apiKey: 123", "recommendation": "use env"}]}'
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+        agent.client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        # Mock Playwright
+        mock_page = AsyncMock()
+        mock_page.evaluate.return_value = ["https://example.com/main.js"]
+        mock_page.goto = AsyncMock()
+
+        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
+        mock_context.new_page.return_value = mock_page
+        mock_context.close = AsyncMock()
+        mock_browser.new_context.return_value = mock_context
+        mock_browser.close = AsyncMock()
+
+        mock_playwright = AsyncMock()
+        mock_playwright.chromium.launch.return_value = mock_browser
+        mock_playwright.__aenter__ = AsyncMock(return_value=mock_playwright)
+        mock_playwright.__aexit__ = AsyncMock()
+
+        # Mock aiohttp
+        mock_response_js = MagicMock()
+        mock_response_js.text = AsyncMock(return_value="const apiKey = '123';")
+        mock_response_js.__aenter__ = AsyncMock(return_value=mock_response_js)
+        mock_response_js.__aexit__ = AsyncMock()
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_response_js
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock()
+
+        with patch('agents.source_sorcerer.async_playwright', return_value=mock_playwright), \
+             patch('aiohttp.ClientSession', return_value=mock_session):
+
+            agent.emit_event = AsyncMock()
+            agent.report_finding = AsyncMock()
+            agent.update_progress = AsyncMock()
+            agent.update_status = AsyncMock()
+
+            await agent.execute()
+
+            agent.report_finding.assert_called_once()
+            self.assertIn("[JS] Hardcoded Key", agent.report_finding.call_args.kwargs['title'])
+
+    async def test_shadow_hunter_agent(self):
+        agent = ShadowHunterAgent(self.run_id, self.session_id, self.target_url)
+
+        # Mock OpenAI
+        mock_choice = MagicMock()
+        mock_choice.message.content = '{"paths": ["/.env"]}'
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+        agent.client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        # Mock aiohttp
+        mock_response_hit = MagicMock()
+        mock_response_hit.status = 200
+        mock_response_hit.text = AsyncMock(return_value="DB_PASSWORD=secret")
+        mock_response_hit.__aenter__ = AsyncMock(return_value=mock_response_hit)
+        mock_response_hit.__aexit__ = AsyncMock()
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_response_hit
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock()
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            agent.emit_event = AsyncMock()
+            agent.report_finding = AsyncMock()
+            agent.update_progress = AsyncMock()
+            agent.update_status = AsyncMock()
+
+            await agent.execute()
+
+            agent.report_finding.assert_called_once()
+            self.assertIn("Exposed Shadow Asset: /.env", agent.report_finding.call_args.kwargs['title'])
 
 if __name__ == '__main__':
     unittest.main()

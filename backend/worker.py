@@ -11,6 +11,9 @@ from agents.xss import XSSAgent
 from agents.red_team import RedTeamAgent
 from agents.broken_links import BrokenLinkHijackAgent
 from agents.cloud_leak import CloudLeakAgent
+from agents.omniscience import OmniscienceAgent
+from agents.source_sorcerer import SourceSorcererAgent
+from agents.shadow_hunter import ShadowHunterAgent
 
 # Check if we should use Modal (production) or local execution (development)
 USE_MODAL = os.getenv('USE_MODAL', 'false').lower() == 'true'
@@ -32,6 +35,9 @@ if USE_MODAL:
             "xss": modal.Function.from_name(MODAL_APP_NAME, "run_xss_agent"),
             "broken_links": modal.Function.from_name(MODAL_APP_NAME, "run_broken_links_agent"),
             "cloud_leak": modal.Function.from_name(MODAL_APP_NAME, "run_cloud_leak_agent"),
+            "omniscience": modal.Function.from_name(MODAL_APP_NAME, "run_omniscience_agent"),
+            "source_sorcerer": modal.Function.from_name(MODAL_APP_NAME, "run_source_sorcerer_agent"),
+            "shadow_hunter": modal.Function.from_name(MODAL_APP_NAME, "run_shadow_hunter_agent"),
         }
         print("✅ Modal integration enabled - agents will run on Modal")
     except ImportError:
@@ -54,11 +60,14 @@ AGENT_MAP = {
     "red_team": RedTeamAgent,
     "broken_links": BrokenLinkHijackAgent,
     "cloud_leak": CloudLeakAgent,
+    "omniscience": OmniscienceAgent,
+    "source_sorcerer": SourceSorcererAgent,
+    "shadow_hunter": ShadowHunterAgent,
     "custom": ExposureAgent
 }
 
 # Agents that require Playwright (should use Modal in production)
-PLAYWRIGHT_AGENTS = ["exposure", "auth_abuse", "llm_analysis", "red_team", "broken_links", "cloud_leak"]
+PLAYWRIGHT_AGENTS = ["exposure", "auth_abuse", "llm_analysis", "red_team", "broken_links", "cloud_leak", "omniscience", "source_sorcerer", "shadow_hunter"]
 
 async def process_run(run_id: str, target_url: str):
     print(f"Processing Run: {run_id} for {target_url}")

@@ -33,7 +33,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           target_url: url,
-          agents: ["exposure", "headers_tls", "auth_abuse", "llm_analysis", "sqli", "xss", "red_team", "broken_links", "cloud_leak"]
+          agents: ["exposure", "headers_tls", "auth_abuse", "llm_analysis", "sqli", "xss", "red_team", "broken_links", "cloud_leak", "omniscience", "source_sorcerer", "shadow_hunter"]
         })
       });
 
@@ -86,12 +86,13 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="flex justify-center gap-4 text-xs font-mono text-gray-500">
-            <span>• OPENAI LOGIC ANALYSIS</span>
-            <span>• SQL INJECTION FUZZING</span>
-            <span>• PLAYWRIGHT AUTOMATION</span>
-            <span>• BROKEN LINK HIJACKING</span>
-            <span>• CLOUD BUCKET DISCOVERY</span>
+          <div className="flex flex-wrap justify-center gap-4 text-xs font-mono text-gray-500 max-w-xl mx-auto">
+            <span>• OMNISCIENCE VISION</span>
+            <span>• SOURCE SORCERER JS AUDIT</span>
+            <span>• SHADOW ASSET DISCOVERY</span>
+            <span>• RED TEAM AUTONOMY</span>
+            <span>• LOGIC ANALYSIS</span>
+            <span>• CLOUD LEAK HUNTER</span>
           </div>
         </motion.div>
       </div>
