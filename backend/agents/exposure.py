@@ -9,8 +9,7 @@ class ExposureAgent(BaseAgent):
         async with async_playwright() as p:
             # Headless MUST be true for Modal/Linux without Xvfb
             browser = await p.chromium.launch(headless=True)
-            # Enable video recording
-            context = await browser.new_context(record_video_dir="videos/")
+            context = await browser.new_context()
             page = await context.new_page()
             
             try:
@@ -53,6 +52,5 @@ class ExposureAgent(BaseAgent):
                 await self.emit_event("ERROR", f"Playwright error: {str(e)}")
                 raise e
             finally:
-                # Close context to save video
                 await context.close()
                 await browser.close()

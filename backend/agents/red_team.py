@@ -43,8 +43,7 @@ class RedTeamAgent(BaseAgent):
             browser = await p.chromium.launch(headless=True)
             self.context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Sentinel/1.0",
-                viewport={'width': 1280, 'height': 720},
-                record_video_dir="videos/"
+                viewport={'width': 1280, 'height': 720}
             )
             self.page = await self.context.new_page()
 
@@ -126,7 +125,7 @@ class RedTeamAgent(BaseAgent):
                     await asyncio.sleep(5)
                     continue
 
-            # Close context first to save video
+            # Close context
             await self.context.close()
             await browser.close()
             await self.update_status("COMPLETED")

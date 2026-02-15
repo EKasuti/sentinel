@@ -19,8 +19,7 @@ class LLMAnalysisAgent(BaseAgent):
         async with async_playwright() as p:
             # Headless must be true for Modal environment
             browser = await p.chromium.launch(headless=True)
-            # Create a context to support video recording
-            context = await browser.new_context(record_video_dir="videos/")
+            context = await browser.new_context()
             page = await context.new_page()
             
             try:
@@ -86,6 +85,5 @@ class LLMAnalysisAgent(BaseAgent):
             except Exception as e:
                 await self.emit_event("ERROR", f"LLM Scan failed: {str(e)}")
             finally:
-                # Close context to ensure video is saved
                 await context.close()
                 await browser.close()
