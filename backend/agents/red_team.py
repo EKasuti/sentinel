@@ -129,7 +129,7 @@ class RedTeamAgent(BaseAgent):
         
         try:
             response = await self.openai.chat.completions.create(
-                model="o1-preview",
+                model="gpt-4.1",
                 messages=[{"role": "user", "content": prompt}]
             )
             content = response.choices[0].message.content
