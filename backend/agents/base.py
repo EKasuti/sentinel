@@ -9,6 +9,7 @@ class BaseAgent(ABC):
         self.session_id = session_id
         self.target_url = target_url
         self.log_buffer = []
+        self._repro_steps = []  # Tracks reproduction steps for findings
 
     async def run(self):
         """Main execution method to be implemented by agents."""
@@ -24,6 +25,37 @@ class BaseAgent(ABC):
     async def execute(self):
         """Specific logic for the agent."""
         pass
+
+    # ---------- Reproduction Step Tracking ----------
+
+    def step(self, command: str, output: str = ""):
+        """Log a reproduction step (command + output). Call before report_finding."""
+        self._repro_steps.append({
+            "command": command,
+            "output": output[:500] if output else ""
+        })
+
+    def clear_steps(self):
+        """Clear accumulated reproduction steps (call after reporting a finding)."""
+        self._repro_steps = []
+
+    async def _emit_repro_steps(self, finding_id: str, steps: list):
+        """Emit reproduction steps linked to a finding."""
+        if not steps or not finding_id:
+            return
+        try:
+            await self.emit_event(
+                "REPRO_STEPS",
+                f"Reproduction steps for finding",
+                {
+                    "finding_id": finding_id,
+                    "steps": steps
+                }
+            )
+        except Exception as e:
+            print(f"Failed to emit repro steps: {e}")
+
+    # ---------- Core Methods ----------
 
     async def update_status(self, status: str):
         supabase.table('agent_sessions').update({
@@ -44,19 +76,13 @@ class BaseAgent(ABC):
             "message": message,
             "data": data or {}
         }
-        # Fire and forget (in a real app, maybe batch or queue)
-        # Using Supabase directly here which is IO blocking but okay for prototype
-        # Or wrap in run_in_executor if needed, but supabase-py might support async?
-        # Actually supabase-py is sync by default unless using an async client?
-        # For now we'll assume sync calls are fast enough or wrap them later.
-        # Ideally we use an async wrapper or just sync calls in a thread.
-        # For simplicity in this Hackathon prototype:
         try:
             supabase.table('run_events').insert(event).execute()
         except Exception as e:
             print(f"Failed to emit event: {e}")
 
-    async def report_finding(self, severity: str, title: str, evidence: str, recommendation: str):
+    async def report_finding(self, severity: str, title: str, evidence: str, recommendation: str, steps: list = None) -> str:
+        """Report a vulnerability finding with optional reproduction steps. Returns the finding ID."""
         finding = {
             "run_id": self.run_id,
             "agent_type": self.__class__.__name__,
@@ -65,31 +91,19 @@ class BaseAgent(ABC):
             "evidence": evidence,
             "recommendation": recommendation
         }
-        supabase.table('findings').insert(finding).execute()
-
-    async def save_screenshot(self, page, title: str):
-        """Captures a screenshot and saves it as an event."""
         try:
-            timestamp = datetime.datetime.now().strftime("%H%M%S")
-            filename = f"{self.session_id}_{timestamp}.png"
-            path = f"screenshots/{filename}"
-            
-            # 1. Capture locally (if useful for debugging or later upload)
-            # await page.screenshot(path=path) 
-            
-            # 2. Get bytes for DB/Storage
-            screenshot_bytes = await page.screenshot(type='png', scale="css")
-            import base64
-            b64_img = base64.b64encode(screenshot_bytes).decode('utf-8')
-            
-            # 3. Emit SCREENSHOT event with base64 data (Quick & Dirty for Hackathon)
-            # For production, we'd upload to storage and save URL.
-            await self.emit_event(
-                "SCREENSHOT", 
-                f"Screenshot: {title}", 
-                {"image": f"data:image/png;base64,{b64_img}"}
-            )
-            
+            result = supabase.table('findings').insert(finding).execute()
+            if result.data and len(result.data) > 0:
+                finding_id = result.data[0].get("id", "")
+                # Emit reproduction steps (use explicit steps or accumulated self._repro_steps)
+                repro = steps if steps else self._repro_steps
+                if repro and finding_id:
+                    await self._emit_repro_steps(finding_id, list(repro))
+                self.clear_steps()
+                return finding_id
         except Exception as e:
-            print(f"Failed to take screenshot: {e}")
-            await self.emit_event("ERROR", f"Failed to capture screenshot: {str(e)}")
+            print(f"Failed to report finding: {e}")
+        self.clear_steps()
+        return ""
+
+

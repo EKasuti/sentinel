@@ -91,6 +91,9 @@ class CORSAgent(BaseAgent):
                                 severity = "CRITICAL" if acac.lower() == "true" else "HIGH"
                                 cred_note = " WITH credentials allowed" if acac.lower() == "true" else ""
                                 
+                                self.clear_steps()
+                                self.step(f"curl -s -H 'Origin: {origin}' -D - '{url}'", f"Access-Control-Allow-Origin: {acao}\nAccess-Control-Allow-Credentials: {acac}")
+                                self.step("Verify origin is reflected back", f"Server echoes attacker origin — any site can read responses{' and send authenticated requests' if acac.lower() == 'true' else ''}")
                                 await self.report_finding(
                                     severity=severity,
                                     title=f"CORS Origin Reflection{cred_note} on {path}",
@@ -111,6 +114,9 @@ class CORSAgent(BaseAgent):
                             
                             # Critical: Wildcard with credentials
                             elif acao == "*" and acac.lower() == "true" and f"wildcard_creds_{path}" not in findings_reported:
+                                self.clear_steps()
+                                self.step(f"curl -s -H 'Origin: {origin}' -D - '{url}'", f"Access-Control-Allow-Origin: *\nAccess-Control-Allow-Credentials: true")
+                                self.step("Check CORS headers", "Wildcard origin (*) combined with credentials — browser-rejected but server misconfigured")
                                 await self.report_finding(
                                     severity="CRITICAL",
                                     title=f"CORS Wildcard with Credentials on {path}",
@@ -128,6 +134,9 @@ class CORSAgent(BaseAgent):
                             elif acao == "*" and f"wildcard_{path}" not in findings_reported:
                                 # Only report if it's an API endpoint (wildcard on static sites is often fine)
                                 if any(p in path for p in ["/api", "/rest", "/graphql", "/auth"]):
+                                    self.clear_steps()
+                                    self.step(f"curl -s -H 'Origin: {origin}' -D - '{url}'", f"Access-Control-Allow-Origin: *")
+                                    self.step("Evaluate risk", "Wildcard origin on API endpoint — any website can read API responses")
                                     await self.report_finding(
                                         severity="MEDIUM",
                                         title=f"CORS Wildcard Origin on API Endpoint {path}",
@@ -142,6 +151,9 @@ class CORSAgent(BaseAgent):
                             
                             # High: Null origin accepted
                             elif origin == "null" and acao == "null" and f"null_{path}" not in findings_reported:
+                                self.clear_steps()
+                                self.step(f"curl -s -H 'Origin: null' -D - '{url}'", f"Access-Control-Allow-Origin: null")
+                                self.step("Verify null origin allowed", "Server accepts null origin — exploitable via sandboxed iframes or data: URIs")
                                 await self.report_finding(
                                     severity="HIGH",
                                     title=f"CORS Allows Null Origin on {path}",
@@ -173,6 +185,9 @@ class CORSAgent(BaseAgent):
                                     if pf_acao in (origin, "*") and any(m in pf_methods.upper() for m in ["DELETE", "PUT", "PATCH"]):
                                         key = f"dangerous_methods_{path}"
                                         if key not in findings_reported:
+                                            self.clear_steps()
+                                            self.step(f"curl -X OPTIONS -H 'Origin: {origin}' -H 'Access-Control-Request-Method: DELETE' -D - '{url}'", f"Access-Control-Allow-Methods: {pf_methods}\nAccess-Control-Allow-Origin: {pf_acao}")
+                                            self.step("Analyze preflight response", f"Server allows dangerous methods ({pf_methods}) from external origins")
                                             await self.report_finding(
                                                 severity="HIGH",
                                                 title=f"CORS Allows Dangerous HTTP Methods on {path}",

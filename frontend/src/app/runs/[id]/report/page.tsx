@@ -20,6 +20,7 @@ import {
     AlertCircle,
     BookOpen,
     Wrench,
+    Terminal,
 } from "lucide-react";
 
 // ---------- Types ----------
@@ -37,6 +38,7 @@ interface ReportFinding {
     references: string[];
     priority: string;
     effort: string;
+    repro_steps: { command: string; output: string }[];
 }
 
 interface ReportSession {
@@ -256,6 +258,40 @@ function FindingDetail({ finding, index }: { finding: ReportFinding; index: numb
                                     {finding.evidence || "No evidence recorded"}
                                 </div>
                             </div>
+
+                            {/* Reproduction Steps */}
+                            {finding.repro_steps && finding.repro_steps.length > 0 && (
+                                <div>
+                                    <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider flex items-center gap-1.5">
+                                        <Terminal className="w-3.5 h-3.5" /> How to Reproduce
+                                    </h4>
+                                    <div className="rounded-xl overflow-hidden border border-white/10 bg-black/60">
+                                        <div className="flex items-center gap-2 px-4 py-2 bg-gray-900/80 border-b border-white/5">
+                                            <div className="flex gap-1.5">
+                                                <div className="w-3 h-3 rounded-full bg-red-500/70" />
+                                                <div className="w-3 h-3 rounded-full bg-yellow-500/70" />
+                                                <div className="w-3 h-3 rounded-full bg-green-500/70" />
+                                            </div>
+                                            <span className="text-[10px] font-mono text-gray-500 ml-2">sentinel — reproduction steps</span>
+                                        </div>
+                                        <div className="p-4 space-y-3 font-mono text-sm">
+                                            {finding.repro_steps.map((step, i) => (
+                                                <div key={i} className="space-y-1">
+                                                    <div className="flex items-start gap-2">
+                                                        <span className="text-emerald-400 shrink-0 select-none">$</span>
+                                                        <span className="text-cyan-300 break-all">{step.command}</span>
+                                                    </div>
+                                                    {step.output && (
+                                                        <div className="ml-4 text-gray-400 text-xs leading-relaxed whitespace-pre-wrap break-all border-l-2 border-gray-700 pl-3">
+                                                            {step.output}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Gemini Sections */}
                             {hasGemini && (

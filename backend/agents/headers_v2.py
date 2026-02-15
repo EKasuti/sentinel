@@ -20,6 +20,7 @@ import ssl
 import asyncio
 import json
 from datetime import datetime
+from urllib.parse import urlparse
 
 
 class HeadersAgent(BaseAgent):
@@ -118,6 +119,8 @@ class HeadersAgent(BaseAgent):
                     for header_name, config in self.REQUIRED_HEADERS.items():
                         max_score += 1
                         if header_name not in headers:
+                            self.clear_steps()
+                            self.step(f"curl -s -D - '{self.target_url}' | grep -i '{header_name}'", "Header not found in response")
                             await self.report_finding(
                                 severity=config["severity"],
                                 title=f"Missing Security Header: {header_name}",
@@ -138,6 +141,9 @@ class HeadersAgent(BaseAgent):
                     if csp:
                         csp_issues = self._analyze_csp(csp)
                         for issue in csp_issues:
+                            self.clear_steps()
+                            self.step(f"curl -s -D - '{self.target_url}' | grep 'Content-Security-Policy'", f"CSP: {csp[:150]}")
+                            self.step(f"Parse CSP directives", issue['evidence'][:150])
                             await self.report_finding(
                                 severity=issue["severity"],
                                 title=issue["title"],
@@ -153,6 +159,9 @@ class HeadersAgent(BaseAgent):
                     if hsts:
                         hsts_issues = self._analyze_hsts(hsts)
                         for issue in hsts_issues:
+                            self.clear_steps()
+                            self.step(f"curl -s -D - '{self.target_url}' | grep 'Strict-Transport-Security'", f"HSTS: {hsts}")
+                            self.step("Validate HSTS configuration", issue['evidence'][:150])
                             await self.report_finding(
                                 severity=issue["severity"],
                                 title=issue["title"],
@@ -174,6 +183,9 @@ class HeadersAgent(BaseAgent):
                     if leaked_headers:
                         leak_details = "\n".join([f"• {k}: {v}" for k, v in leaked_headers.items()])
                         severity = "MEDIUM" if any(h in leaked_headers for h in ["Server", "X-Powered-By"]) else "LOW"
+                        self.clear_steps()
+                        self.step(f"curl -s -D - '{self.target_url}'", "\n".join([f"{k}: {v}" for k, v in leaked_headers.items()]))
+                        self.step("Check for information disclosure headers", f"{len(leaked_headers)} header(s) reveal server/technology information")
                         await self.report_finding(
                             severity=severity,
                             title=f"Server Information Disclosed ({len(leaked_headers)} header{'s' if len(leaked_headers) > 1 else ''})",
@@ -193,6 +205,8 @@ class HeadersAgent(BaseAgent):
                     if not cache_control or "no-store" not in cache_control.lower():
                         # Check if the page might contain sensitive data
                         if response.content_type and "html" in response.content_type:
+                            self.clear_steps()
+                            self.step(f"curl -s -D - '{self.target_url}' | grep -i 'Cache-Control'", f"Cache-Control: {cache_control or 'Not set'}")
                             await self.report_finding(
                                 severity="LOW",
                                 title="Sensitive Page May Be Cached",
@@ -211,6 +225,8 @@ class HeadersAgent(BaseAgent):
                     async with aiohttp.ClientSession() as session:
                         async with session.get(http_url, timeout=aiohttp.ClientTimeout(total=8), allow_redirects=False, ssl=False) as resp:
                             if resp.status not in (301, 302, 307, 308):
+                                self.clear_steps()
+                                self.step(f"curl -s -D - '{http_url}'", f"HTTP {resp.status} — no redirect to HTTPS")
                                 await self.report_finding(
                                     severity="HIGH",
                                     title="HTTP to HTTPS Redirect Not Enforced",
@@ -221,6 +237,9 @@ class HeadersAgent(BaseAgent):
                             elif resp.status in (301, 302, 307, 308):
                                 location = resp.headers.get("Location", "")
                                 if location and not location.startswith("https://"):
+                                    self.clear_steps()
+                                    self.step(f"curl -s -D - '{http_url}'", f"HTTP {resp.status}\nLocation: {location}")
+                                    self.step("Verify redirect target", f"Redirect does not point to HTTPS")
                                     await self.report_finding(
                                         severity="MEDIUM",
                                         title="HTTP Redirect Does Not Target HTTPS",
@@ -241,6 +260,8 @@ class HeadersAgent(BaseAgent):
                 try:
                     tls_findings = await self._analyze_tls()
                     for finding in tls_findings:
+                        self.clear_steps()
+                        self.step(f"openssl s_client -connect {urlparse(self.target_url).hostname}:443", finding["evidence"][:150])
                         await self.report_finding(
                             severity=finding["severity"],
                             title=finding["title"],

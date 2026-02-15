@@ -81,6 +81,10 @@ class SQLiAgent(BaseAgent):
 
                             for payload in self.PAYLOADS[:8]:  # Top 8 payloads
                                 try:
+                                    self.clear_steps()
+                                    self.step(f"Navigate to {path}", f"Found login form with email and password fields")
+                                    self.step(f"Fill email field with: {payload}", "Payload entered into email/username input")
+                                    self.step(f"Fill password field with: anything", "Dummy password entered")
                                     await email_input.fill(payload)
                                     await password_input.fill("anything")
                                     
@@ -103,6 +107,8 @@ class SQLiAgent(BaseAgent):
                                             body_lower = body.lower()
                                             for sig in self.SQL_ERROR_SIGNATURES:
                                                 if sig in body_lower:
+                                                    self.step("Click submit button", f"POST request sent to login endpoint")
+                                                    self.step(f"Analyze response (HTTP {status})", f"SQL error signature detected: '{sig}'. Response body: {body[:200]}")
                                                     await self.report_finding(
                                                         severity="CRITICAL",
                                                         title="SQL Injection — Error-Based (Login Form)",
@@ -114,6 +120,8 @@ class SQLiAgent(BaseAgent):
 
                                             # Check for successful auth bypass (200 with token/auth data)
                                             if status == 200 and ("token" in body_lower or "authentication" in body_lower or "umail" in body_lower):
+                                                self.step("Click submit button", f"POST request sent to login endpoint")
+                                                self.step(f"Analyze response (HTTP {status})", f"Authentication BYPASSED — received auth token/session. Response: {body[:200]}")
                                                 await self.report_finding(
                                                     severity="CRITICAL",
                                                     title="SQL Injection — Authentication Bypass",
@@ -164,6 +172,9 @@ class SQLiAgent(BaseAgent):
 
                                     for sig in self.SQL_ERROR_SIGNATURES:
                                         if sig in text_lower:
+                                            self.clear_steps()
+                                            self.step(f"curl -s '{url}'", f"HTTP {resp.status} — Response contains SQL error signature")
+                                            self.step(f"Grep for SQL error patterns", f"Found: '{sig}' in response body: {text[:150]}")
                                             await self.report_finding(
                                                 severity="HIGH",
                                                 title="SQL Injection — Error-Based (Search Endpoint)",
@@ -197,6 +208,9 @@ class SQLiAgent(BaseAgent):
                                         text_lower = text.lower()
                                         for sig in self.SQL_ERROR_SIGNATURES:
                                             if sig in text_lower:
+                                                self.clear_steps()
+                                                self.step(f"curl -s '{fuzzed_url}'", f"HTTP {resp.status} — injected payload into '{param}' parameter")
+                                                self.step(f"Analyze response for SQL errors", f"SQL error detected: '{sig}'")
                                                 await self.report_finding(
                                                     severity="CRITICAL",
                                                     title="SQL Injection Detected (URL Parameter)",

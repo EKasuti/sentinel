@@ -64,6 +64,9 @@ class XSSAgent(BaseAgent):
                             
                             # Check for unescaped reflection (actual XSS)
                             if payload in content and payload != canary:
+                                self.clear_steps()
+                                self.step(f"Navigate to {test_url}", f"Page loaded with XSS payload in search parameter")
+                                self.step(f"Inspect DOM for payload reflection", f"Payload '{payload}' found UNESCAPED in page HTML — XSS confirmed")
                                 await self.report_finding(
                                     severity="HIGH",
                                     title="Reflected XSS — Search Parameter",
@@ -105,6 +108,10 @@ class XSSAgent(BaseAgent):
                             content = await page.content()
                             
                             if payload in content and "<" in payload:
+                                self.clear_steps()
+                                self.step(f"Type into search/input field: {payload}", "Payload entered into text input")
+                                self.step("Press Enter to submit", "Form submitted, page re-rendered")
+                                self.step("Inspect DOM for payload", f"Payload '{payload}' rendered in DOM without escaping — DOM XSS confirmed")
                                 await self.report_finding(
                                     severity="HIGH",
                                     title="DOM-Based XSS — Input Field",
@@ -143,6 +150,9 @@ class XSSAgent(BaseAgent):
                                     async with session.get(fuzzed_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                                         text = await resp.text()
                                         if payload in text and "<" in payload:
+                                            self.clear_steps()
+                                            self.step(f"curl -s '{fuzzed_url}'", f"HTTP {resp.status} — response contains reflected XSS payload")
+                                            self.step("Search response for payload", f"Payload '{payload}' reflected unescaped in param '{param}'")
                                             await self.report_finding(
                                                 severity="HIGH",
                                                 title="Reflected XSS — URL Parameter",

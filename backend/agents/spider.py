@@ -69,8 +69,7 @@ class SpiderAgent(BaseAgent):
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Sentinel-Spider/1.0",
-                record_video_dir="videos/"
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Sentinel-Spider/1.0"
             )
             
             # Capture all network requests
@@ -389,6 +388,11 @@ class SpiderAgent(BaseAgent):
                     elif "redirect" in item:
                         evidence += f" → Redirects to {item['redirect']}"
                     
+                    # Navigate to the path and screenshot for critical/high findings
+                    self.clear_steps()
+                    self.step(f"curl -I '{self.target_url.rstrip('/')}{path}'", f"HTTP {item['status']} — {item.get('size', '?')} bytes returned")
+                    if "preview" in item:
+                        self.step(f"curl -s '{self.target_url.rstrip('/')}{path}' | head -c 300", item['preview'][:200])
                     await self.report_finding(
                         severity=severity,
                         title=title,
@@ -403,6 +407,9 @@ class SpiderAgent(BaseAgent):
                         f"POST {f.get('action', '?')} ({len(f.get('inputs', []))} inputs)"
                         for f in csrf_missing[:5]
                     ])
+                    self.clear_steps()
+                    self.step("Crawl all pages for <form> elements", f"Found {len(discovered_forms)} total forms")
+                    self.step("Check each POST form for CSRF token inputs", f"{len(csrf_missing)} form(s) missing CSRF protection")
                     await self.report_finding(
                         severity="MEDIUM",
                         title=f"CSRF Protection Missing on {len(csrf_missing)} Form(s)",
@@ -413,6 +420,8 @@ class SpiderAgent(BaseAgent):
                 # Report: File upload forms
                 upload_forms = [f for f in discovered_forms if f.get("has_file_upload")]
                 if upload_forms:
+                    self.clear_steps()
+                    self.step("Scan all forms for <input type='file'>", f"Found {len(upload_forms)} form(s) with file upload capability")
                     await self.report_finding(
                         severity="MEDIUM",
                         title="File Upload Endpoint Detected",
@@ -422,6 +431,9 @@ class SpiderAgent(BaseAgent):
                 
                 # Report: Emails found (PII disclosure)
                 if discovered_emails:
+                    self.clear_steps()
+                    self.step("Extract text from page body", "Scanned all crawled pages for email patterns")
+                    self.step("Regex search: [a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}", f"Found {len(discovered_emails)} email(s): {', '.join(list(discovered_emails)[:3])}")
                     await self.report_finding(
                         severity="LOW",
                         title="Email Addresses Disclosed in Page Content",

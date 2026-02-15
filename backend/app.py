@@ -136,6 +136,16 @@ def get_report(run_id):
         sess_res = supabase.table('agent_sessions').select('*').eq('run_id', run_id).execute()
         sessions = sess_res.data or []
 
+        # 3b. Fetch reproduction step events linked to findings
+        repro_res = supabase.table('run_events').select('data').eq('run_id', run_id).eq('event_type', 'REPRO_STEPS').execute()
+        repro_map = {}  # finding_id -> list of steps
+        for ev in (repro_res.data or []):
+            data = ev.get("data", {})
+            fid = data.get("finding_id")
+            steps = data.get("steps", [])
+            if fid and steps:
+                repro_map[fid] = steps
+
         # 4. Calculate risk
         score, grade = _calculate_risk(findings)
 
@@ -220,6 +230,7 @@ Respond ONLY with a valid JSON array:
             entry["references"] = gem.get("references", [])
             entry["priority"] = gem.get("priority", "")
             entry["effort"] = gem.get("effort", "")
+            entry["repro_steps"] = repro_map.get(f["id"], [])
             enhanced_findings.append(entry)
 
         return jsonify({

@@ -133,6 +133,9 @@ class PortScanAgent(BaseAgent):
         critical_open = [(p, s, d) for p, s, d in open_ports if p in self.CRITICAL_PORTS]
         if critical_open:
             for port, service, desc in critical_open:
+                self.clear_steps()
+                self.step(f"nc -zv {hostname} {port}", f"Connection succeeded — port {port} ({service}) is OPEN")
+                self.step("Assess exposure risk", f"{service} ({desc}) should NEVER be publicly accessible")
                 await self.report_finding(
                     severity="CRITICAL",
                     title=f"Publicly Exposed {service} on Port {port}",
@@ -144,6 +147,9 @@ class PortScanAgent(BaseAgent):
         high_open = [(p, s, d) for p, s, d in open_ports if p in self.HIGH_PORTS]
         if high_open:
             for port, service, desc in high_open:
+                self.clear_steps()
+                self.step(f"nc -zv {hostname} {port}", f"Connection succeeded — port {port} ({service}) is OPEN")
+                self.step("Evaluate admin access risk", f"{desc} — administrative service exposed to internet")
                 await self.report_finding(
                     severity="HIGH",
                     title=f"Exposed {service} Service on Port {port}",
@@ -155,6 +161,9 @@ class PortScanAgent(BaseAgent):
         dev_open = [(p, s, d) for p, s, d in open_ports if p in self.DEV_PORTS]
         if dev_open:
             for port, service, desc in dev_open:
+                self.clear_steps()
+                self.step(f"nc -zv {hostname} {port}", f"Connection succeeded — port {port} ({service}) is OPEN")
+                self.step("Identify service type", f"{desc} — development server port exposed in production")
                 # Check if it's actually a dev server
                 await self.report_finding(
                     severity="MEDIUM",
@@ -205,6 +214,9 @@ class PortScanAgent(BaseAgent):
                             
                             for indicator in management_indicators:
                                 if indicator.lower() in (title_match or "").lower() or indicator.lower() in server.lower():
+                                    self.clear_steps()
+                                    self.step(f"curl -s -D - '{scheme}://{hostname}:{port}/'", f"HTTP {resp.status}\nServer: {server}\nTitle: {title_match}")
+                                    self.step(f"Identify management UI", f"{indicator} detected — management interface publicly accessible")
                                     await self.report_finding(
                                         severity="HIGH",
                                         title=f"Exposed {indicator} on Port {port}",

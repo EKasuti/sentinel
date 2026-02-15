@@ -86,7 +86,7 @@ class ExposureAgent(BaseAgent):
         
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(record_video_dir="videos/")
+            context = await browser.new_context()
             page = await context.new_page()
             
             try:
@@ -174,6 +174,9 @@ class ExposureAgent(BaseAgent):
                     all_secrets.append(secret)
                     severity = "CRITICAL" if secret["type"] in ["AWS_ACCESS_KEY", "STRIPE_SECRET", "PRIVATE_KEY", "MONGODB_URI", "GITHUB_TOKEN", "SENDGRID_KEY", "SLACK_WEBHOOK", "DISCORD_WEBHOOK"] else "HIGH"
                     
+                    self.clear_steps()
+                    self.step(f"Fetch and scan JS bundle: {secret['source']}", f"Scanned source code for secret patterns")
+                    self.step(f"Regex match for {secret['type']}", f"Found: {secret['value'][:60]}...")
                     await self.report_finding(
                         severity=severity,
                         title=f"Exposed {secret['type']} in Client-Side Code",
@@ -222,6 +225,9 @@ class ExposureAgent(BaseAgent):
                     for sm in source_maps:
                         sources_list.extend(sm.get("sampleSources", []))
                     
+                    self.clear_steps()
+                    self.step("Scan <script> tags for sourceMappingURL", f"Found {len(source_maps)} source map reference(s)")
+                    self.step(f"Fetch source map files", f"Maps accessible, exposing {len(sources_list)} original source files: {', '.join(sources_list[:5])}")
                     await self.report_finding(
                         severity="MEDIUM",
                         title=f"Source Maps Exposed — {len(source_maps)} Map File(s) Accessible",
@@ -261,6 +267,9 @@ class ExposureAgent(BaseAgent):
                 }""")
                 
                 for item in storage_data:
+                    self.clear_steps()
+                    self.step(f"window.{item['store']}.getItem('{item['key']}')", f"Value: {item['value'][:80]}...")
+                    self.step("Check if key matches sensitive patterns", f"Key '{item['key']}' matches sensitive data pattern")
                     await self.report_finding(
                         severity="HIGH",
                         title=f"Sensitive Data in {item['store']}: '{item['key']}'",
@@ -293,6 +302,9 @@ class ExposureAgent(BaseAgent):
                         sensitive_comments.append(comment)
                 
                 if sensitive_comments:
+                    self.clear_steps()
+                    self.step("Walk DOM tree for HTML comment nodes", f"Found {len(comments)} comments total")
+                    self.step("Filter for sensitive keywords (todo, password, secret, api, key...)", f"{len(sensitive_comments)} comments contain sensitive information")
                     await self.report_finding(
                         severity="LOW",
                         title=f"Sensitive HTML Comments ({len(sensitive_comments)} found)",
@@ -327,6 +339,10 @@ class ExposureAgent(BaseAgent):
                         issues.append("No SameSite attribute (browser default behavior)")
                     
                     if issues:
+                        self.clear_steps()
+                        self.step(f"document.cookie (inspect cookie: '{cookie['name']}')", f"Domain: {cookie['domain']}, HttpOnly: {cookie.get('httpOnly')}, Secure: {cookie.get('secure')}, SameSite: {cookie.get('sameSite', 'not set')}")
+                        for iss in issues:
+                            self.step("Security flag check", iss)
                         await self.report_finding(
                             severity=severity,
                             title=f"Insecure Cookie: '{cookie['name']}'",
@@ -370,6 +386,8 @@ class ExposureAgent(BaseAgent):
                 }""")
                 
                 if meta_info.get("generator"):
+                    self.clear_steps()
+                    self.step("document.querySelector('meta[name=generator]').content", meta_info['generator'])
                     await self.report_finding(
                         severity="LOW",
                         title="Technology Version Disclosed via Meta Generator",
@@ -392,6 +410,9 @@ class ExposureAgent(BaseAgent):
                                 if resp.status in (301, 302, 303, 307, 308):
                                     location = resp.headers.get("Location", "")
                                     if "evil-redirect.com" in location:
+                                        self.clear_steps()
+                                        self.step(f"curl -s -D - '{test_url}'", f"HTTP {resp.status}\nLocation: {location}")
+                                        self.step("Verify redirect target", f"Server redirects to attacker-controlled domain via '{param}' parameter")
                                         await self.report_finding(
                                             severity="MEDIUM",
                                             title=f"Open Redirect via '{param}' Parameter",
@@ -425,6 +446,8 @@ class ExposureAgent(BaseAgent):
                 
                 for keyword, name in admin_indicators:
                     if keyword in content.lower() and keyword not in ("dashboard",):
+                        self.clear_steps()
+                        self.step(f"grep -i '{keyword}' page_content.html", f"Found '{keyword}' indicator in page source")
                         await self.report_finding(
                             severity="MEDIUM" if keyword in ("webpack", "hot module replacement", "debug toolbar") else "LOW",
                             title=f"Potential {name} Exposure Detected",
