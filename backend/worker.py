@@ -68,49 +68,58 @@ async def process_run(run_id: str, target_url: str):
     tasks = []
 
     # 3. Launch Agents
-    for session in sessions_data:
-        agent_type = session['agent_type']
-        session_id = session['id']
+    
+    # CASE A: USE MODAL (Remote Execution)
+    if USE_MODAL:
+        for session in sessions_data:
+            agent_type = session['agent_type']
+            session_id = session['id']
+            if agent_type in MODAL_AGENT_MAP:
+                print(f"🚀 Launching {agent_type} agent on Modal (session: {session_id})")
+                modal_func = MODAL_AGENT_MAP[agent_type]
+                tasks.append(modal_func.remote.aio(run_id, session_id, target_url))
+            else:
+                 print(f"⚠️  Warning: {agent_type} not found in Modal map, skipping.")
+        
+        # Wait for all modal tasks
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    print(f"❌ Modal task failed: {result}")
+                else:
+                    print(f"✅ Modal task completed: {result}")
 
-        # Decide whether to use Modal or local execution
-        if USE_MODAL and agent_type in MODAL_AGENT_MAP:
-            # Use Modal for remote execution
-            print(f"🚀 Launching {agent_type} agent on Modal (session: {session_id})")
-            modal_func = MODAL_AGENT_MAP[agent_type]
-            tasks.append(modal_func.remote.aio(run_id, session_id, target_url))
-        else:
-            # Use local execution
+    # CASE B: LOCAL EXECUTION (Sequential LLM to avoid rate limiting)
+    else:
+        # Separate LLM-heavy agents to avoid Gemini rate limit contention
+        LLM_AGENTS = {"llm_analysis", "red_team"}
+        non_llm_tasks = []
+        llm_sessions = []
+
+        for session in sessions_data:
+            agent_type = session['agent_type']
+            session_id = session['id']
+            
             print(f"💻 Launching {agent_type} agent locally (session: {session_id})")
-            if agent_type in PLAYWRIGHT_AGENTS and USE_MODAL == False:
-                print(f"⚠️  Warning: {agent_type} requires Playwright. Consider enabling Modal for production.")
-
             AgentClass = AGENT_MAP.get(agent_type, ExposureAgent)
             agent_instance = AgentClass(run_id, session_id, target_url)
-            tasks.append(agent_instance.run())
 
-    # 4. Wait for all agents
-    if tasks:
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Log any errors and update session status if failed
-        for i, result in enumerate(results):
-            session = sessions_data[i]
-            session_id = session['id']
-            agent_type = session['agent_type']
-
-            if isinstance(result, Exception):
-                print(f"❌ Agent task {i} ({agent_type}) failed: {result}")
-                # Update status to FAILED
-                try:
-                    supabase.table('agent_sessions').update({
-                        "status": "FAILED",
-                        "updated_at": "now()" # Let DB handle timestamp if possible, or use string
-                    }).eq("id", session_id).execute()
-                except Exception as update_err:
-                    print(f"Failed to update session {session_id} to FAILED: {update_err}")
-
+            if agent_type in LLM_AGENTS:
+                llm_sessions.append(agent_instance)
             else:
-                print(f"✅ Agent task {i} ({agent_type}) completed: {result}")
+                non_llm_tasks.append(agent_instance.run())
+        
+        # 1. Run non-LLM agents concurrently (these are fast, no rate limit issues)
+        if non_llm_tasks:
+            await asyncio.gather(*non_llm_tasks)
+
+        # 2. Run LLM agents sequentially to avoid RPM contention
+        for agent in llm_sessions:
+            try:
+                await agent.run()
+            except Exception as e:
+                print(f"LLM Agent {agent.__class__.__name__} failed: {e}")
 
     # 5. Update Run Status to COMPLETED
     supabase.table('security_runs').update({"status": "COMPLETED", "ended_at": "now()"}).eq("id", run_id).execute()

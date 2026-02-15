@@ -5,8 +5,9 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { AgentSession, RunEvent, Finding, SecurityRun } from "@/lib/types";
 import AgentLane from "@/components/AgentLane";
-import { Shield, Activity, Bug } from "lucide-react";
+import { Shield, Activity, Bug, FileText } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 
 export default function RunDetails() {
     const params = useParams();
@@ -66,6 +67,11 @@ export default function RunDetails() {
                     setFindings(prev => [...prev, payload.new as Finding]);
                 }
             )
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'security_runs', filter: `id=eq.${runId}` },
+                (payload) => {
+                    setRun(payload.new as SecurityRun);
+                }
+            )
             .subscribe((status) => {
                 console.log(`Realtime Subscription Status: ${status} for channel run:${runId}`);
             });
@@ -97,7 +103,16 @@ export default function RunDetails() {
                         TARGET: <span className="text-cyber-blue">{run?.target_url}</span> | RID: {runId.slice(0, 8)}
                     </p>
                 </div>
-                <div className="flex gap-6">
+                <div className="flex gap-6 items-center">
+                    {run?.status === 'COMPLETED' && (
+                        <Link
+                            href={`/runs/${runId}/report`}
+                            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-purple-500/20 border border-cyan-500/30 text-cyan-300 hover:text-white hover:border-cyan-400 transition-all text-sm font-semibold"
+                        >
+                            <FileText className="w-4 h-4" />
+                            View Report
+                        </Link>
+                    )}
                     <div className="text-right">
                         <div className="text-3xl font-black text-white">{totalFindings}</div>
                         <div className="text-xs text-gray-400 font-mono">VULNERABILITIES</div>
