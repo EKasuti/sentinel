@@ -23,8 +23,9 @@ export interface RunEvent {
     id: string;
     run_id: string;
     agent_type: string;
-    event_type: 'INFO' | 'WARNING' | 'ERROR' | 'SUCCESS';
+    event_type: 'INFO' | 'WARNING' | 'ERROR' | 'SUCCESS' | 'SCREENSHOT';
     message: string;
+    data?: any;
     created_at: string;
 }
 

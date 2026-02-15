@@ -19,10 +19,12 @@ class RedTeamAgent(BaseAgent):
         await self.emit_event("INFO", "Initializing Red Team Autonomous Agent...")
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False)
+            # Headless MUST be true for Modal environment
+            browser = await p.chromium.launch(headless=True)
             self.context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Sentinel/1.0",
-                viewport={'width': 1280, 'height': 720}
+                viewport={'width': 1280, 'height': 720},
+                record_video_dir="videos/"
             )
             self.page = await self.context.new_page()
 
@@ -57,6 +59,9 @@ class RedTeamAgent(BaseAgent):
                     await self.emit_event("SUCCESS", f"Mission Complete: {action.get('reason', 'Done')}")
                     break
                 
+                if step % 2 == 0 or action.get('finding'):
+                    await self.save_screenshot(self.page, f"Step {step}: {action['tool']}")
+                
                 await self._execute_tool(action)
                 
                 # Report if interesting
@@ -68,6 +73,8 @@ class RedTeamAgent(BaseAgent):
                         recommendation="Review automated red team findings."
                     )
             
+            # Close context first to save video
+            await self.context.close()
             await browser.close()
             await self.update_status("COMPLETED")
             await self.update_progress(100)

@@ -39,6 +39,11 @@ export default function RunDetails() {
         // Realtime Subscription
         const channel = supabase
             .channel(`run:${runId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'security_runs', filter: `id=eq.${runId}` },
+                (payload) => {
+                    if (payload.new) setRun(payload.new as SecurityRun);
+                }
+            )
             .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_sessions', filter: `run_id=eq.${runId}` },
                 (payload) => {
                     const newSession = payload.new as AgentSession;
@@ -65,7 +70,13 @@ export default function RunDetails() {
                 console.log(`Realtime Subscription Status: ${status} for channel run:${runId}`);
             });
 
-        return () => { supabase.removeChannel(channel); };
+        // Polling Fallback (every 2s)
+        const interval = setInterval(fetchData, 2000);
+
+        return () => {
+            supabase.removeChannel(channel);
+            clearInterval(interval);
+        };
     }, [runId]);
 
     // Calculate Scores & Stats
@@ -121,16 +132,29 @@ export default function RunDetails() {
                         <h4 className="text-gray-500 mb-2 border-b border-gray-800 pb-2">SYSTEM EVENTS</h4>
                         <div className="space-y-1">
                             {events.map(e => (
-                                <div key={e.id} className="flex gap-2">
-                                    <span className="text-gray-600">[{new Date(e.created_at).toLocaleTimeString()}]</span>
-                                    <span className={`
-                                        ${e.event_type === 'ERROR' ? 'text-red-500' : ''}
-                                        ${e.event_type === 'WARNING' ? 'text-yellow-500' : ''}
-                                        ${e.event_type === 'SUCCESS' ? 'text-green-400' : ''}
-                                        ${e.event_type === 'INFO' ? 'text-blue-300' : ''}
-                                    `}>
-                                        {e.agent_type}: {e.message}
-                                    </span>
+                                <div key={e.id} className="flex flex-col gap-1 mb-2">
+                                    <div className="flex gap-2">
+                                        <span className="text-gray-600">[{new Date(e.created_at).toLocaleTimeString()}]</span>
+                                        <span className={`
+                                            ${e.event_type === 'ERROR' ? 'text-red-500' : ''}
+                                            ${e.event_type === 'WARNING' ? 'text-yellow-500' : ''}
+                                            ${e.event_type === 'SUCCESS' ? 'text-green-400' : ''}
+                                            ${e.event_type === 'INFO' ? 'text-blue-300' : ''}
+                                            ${e.event_type === 'SCREENSHOT' ? 'text-purple-400 font-bold' : ''}
+                                        `}>
+                                            {e.agent_type}: {e.message}
+                                        </span>
+                                    </div>
+                                    {e.event_type === 'SCREENSHOT' && (e.data as any)?.image && (
+                                        <div className="ml-24 mt-1">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                                src={(e.data as any).image}
+                                                alt="Screenshot"
+                                                className="rounded border border-gray-700 max-w-sm hover:scale-150 transition-transform origin-top-left z-10 relative"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>

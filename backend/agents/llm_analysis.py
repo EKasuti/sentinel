@@ -16,8 +16,11 @@ class LLMAnalysisAgent(BaseAgent):
         await self.emit_event("INFO", "Starting LLM Logic & PII Analysis...")
         
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False)
-            page = await browser.new_page()
+            # Headless must be true for Modal environment
+            browser = await p.chromium.launch(headless=True)
+            # Create a context to support video recording
+            context = await browser.new_context(record_video_dir="videos/")
+            page = await context.new_page()
             
             try:
                 await self.update_progress(10)
@@ -74,4 +77,6 @@ class LLMAnalysisAgent(BaseAgent):
             except Exception as e:
                 await self.emit_event("ERROR", f"LLM Scan failed: {str(e)}")
             finally:
+                # Close context to ensure video is saved
+                await context.close()
                 await browser.close()

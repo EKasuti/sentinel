@@ -15,7 +15,8 @@ export default function Home() {
     setIsStarting(true);
 
     try {
-      const res = await fetch("http://127.0.0.1:5000/runs/start", {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      const res = await fetch(`${apiUrl}/runs/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

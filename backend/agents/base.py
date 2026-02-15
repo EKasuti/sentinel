@@ -66,3 +66,30 @@ class BaseAgent(ABC):
             "recommendation": recommendation
         }
         supabase.table('findings').insert(finding).execute()
+
+    async def save_screenshot(self, page, title: str):
+        """Captures a screenshot and saves it as an event."""
+        try:
+            timestamp = datetime.datetime.now().strftime("%H%M%S")
+            filename = f"{self.session_id}_{timestamp}.png"
+            path = f"screenshots/{filename}"
+            
+            # 1. Capture locally (if useful for debugging or later upload)
+            # await page.screenshot(path=path) 
+            
+            # 2. Get bytes for DB/Storage
+            screenshot_bytes = await page.screenshot(type='png', scale="css")
+            import base64
+            b64_img = base64.b64encode(screenshot_bytes).decode('utf-8')
+            
+            # 3. Emit SCREENSHOT event with base64 data (Quick & Dirty for Hackathon)
+            # For production, we'd upload to storage and save URL.
+            await self.emit_event(
+                "SCREENSHOT", 
+                f"Screenshot: {title}", 
+                {"image": f"data:image/png;base64,{b64_img}"}
+            )
+            
+        except Exception as e:
+            print(f"Failed to take screenshot: {e}")
+            await self.emit_event("ERROR", f"Failed to capture screenshot: {str(e)}")

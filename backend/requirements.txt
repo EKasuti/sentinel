@@ -8,3 +8,5 @@ aiohttp
 openai
 beautifulsoup4
 pytest
+gunicorn
+modal
