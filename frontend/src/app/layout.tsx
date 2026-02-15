@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Shield | Autonomous Blue Team",
+  title: "Sentinel | Autonomous Blue Team",
   description: "AI-powered Vulnerability Scanner & Blue Team Orchestrator",
 };
 
