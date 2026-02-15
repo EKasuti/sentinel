@@ -2,6 +2,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from db import supabase
 import datetime
+from utils.url_validator import is_safe_url
 
 class BaseAgent(ABC):
     def __init__(self, run_id: str, session_id: str, target_url: str):
@@ -12,6 +13,11 @@ class BaseAgent(ABC):
 
     async def run(self):
         """Main execution method to be implemented by agents."""
+        if not is_safe_url(self.target_url):
+            await self.emit_event("ERROR", f"Unsafe target URL blocked: {self.target_url}")
+            await self.update_status("FAILED")
+            return
+
         await self.update_status("RUNNING")
         try:
             await self.execute()
@@ -26,15 +32,19 @@ class BaseAgent(ABC):
         pass
 
     async def update_status(self, status: str):
-        supabase.table('agent_sessions').update({
-            "status": status,
-            "updated_at": datetime.datetime.now().isoformat()
-        }).eq("id", self.session_id).execute()
+        await asyncio.to_thread(
+            supabase.table('agent_sessions').update({
+                "status": status,
+                "updated_at": datetime.datetime.now().isoformat()
+            }).eq("id", self.session_id).execute
+        )
 
     async def update_progress(self, progress: int):
-        supabase.table('agent_sessions').update({
-            "progress": progress
-        }).eq("id", self.session_id).execute()
+        await asyncio.to_thread(
+            supabase.table('agent_sessions').update({
+                "progress": progress
+            }).eq("id", self.session_id).execute
+        )
 
     async def emit_event(self, event_type: str, message: str, data: dict = None):
         event = {
@@ -44,15 +54,10 @@ class BaseAgent(ABC):
             "message": message,
             "data": data or {}
         }
-        # Fire and forget (in a real app, maybe batch or queue)
-        # Using Supabase directly here which is IO blocking but okay for prototype
-        # Or wrap in run_in_executor if needed, but supabase-py might support async?
-        # Actually supabase-py is sync by default unless using an async client?
-        # For now we'll assume sync calls are fast enough or wrap them later.
-        # Ideally we use an async wrapper or just sync calls in a thread.
-        # For simplicity in this Hackathon prototype:
         try:
-            supabase.table('run_events').insert(event).execute()
+            await asyncio.to_thread(
+                supabase.table('run_events').insert(event).execute
+            )
         except Exception as e:
             print(f"Failed to emit event: {e}")
 
@@ -65,7 +70,9 @@ class BaseAgent(ABC):
             "evidence": evidence,
             "recommendation": recommendation
         }
-        supabase.table('findings').insert(finding).execute()
+        await asyncio.to_thread(
+            supabase.table('findings').insert(finding).execute
+        )
 
     async def save_screenshot(self, page, title: str):
         """Captures a screenshot and saves it as an event."""

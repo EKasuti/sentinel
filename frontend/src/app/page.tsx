@@ -18,12 +18,31 @@ export default function Home() {
   }, []);
 
   const fetchRuns = async () => {
-    const { data } = await supabase.from('security_runs').select('*').order('created_at', { ascending: false }).limit(10);
-    if (data) setRuns(data);
+    try {
+      const { data } = await supabase.from('security_runs').select('*').order('created_at', { ascending: false }).limit(10);
+      if (data) setRuns(data);
+    } catch (e) {
+      console.error("Failed to fetch runs:", e);
+    }
+  };
+
+  const validateUrl = (url: string) => {
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
   };
 
   const startRun = async () => {
     if (!url) return;
+
+    if (!validateUrl(url)) {
+      alert("Please enter a valid URL starting with http:// or https://");
+      return;
+    }
+
     setIsStarting(true);
 
     try {

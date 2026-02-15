@@ -20,7 +20,8 @@ class XSSAgent(BaseAgent):
              await self.update_progress(100)
              return
 
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             for param in params.keys():
                 fuzzed_params = params.copy()
                 fuzzed_params[param] = [payload]
@@ -28,7 +29,7 @@ class XSSAgent(BaseAgent):
                 fuzzed_url = parsed._replace(query=new_query).geturl()
                 
                 try:
-                    async with session.get(fuzzed_url) as resp:
+                    async with session.get(fuzzed_url, allow_redirects=False) as resp:
                         text = await resp.text()
                         
                         if payload in text:
@@ -38,7 +39,7 @@ class XSSAgent(BaseAgent):
                                     evidence=f"Vulnerability found at: {fuzzed_url}\n\nReproduction Steps:\n1. Inject payload: `{payload}` into parameter: `{param}`\n2. Observe alert box execution.",
                                     recommendation="Sanitize all user inputs and use Content-Security-Policy."
                                 )
-                except:
+                except (aiohttp.ClientError, asyncio.TimeoutError):
                     pass
                 
                 await self.update_progress(50) # Rough progress

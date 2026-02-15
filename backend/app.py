@@ -4,6 +4,7 @@ from db import supabase
 import os
 import logging
 from dotenv import load_dotenv
+from utils.url_validator import is_safe_url
 
 load_dotenv()
 
@@ -25,8 +26,9 @@ CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' *.supabase.co;"
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     return response
 
 @app.route('/health', methods=['GET'])
@@ -48,6 +50,10 @@ def start_run():
             return jsonify({"error": "target_url is required"}), 400
         
         target_url = target_url.strip()
+
+        if not is_safe_url(target_url):
+            logger.warning(f"Blocked unsafe target_url: {target_url}")
+            return jsonify({"error": "Invalid or unsafe target_url. Only public http/https URLs are allowed."}), 400
 
         logger.info(f"Starting security run for {target_url} with agents: {agents}")
 

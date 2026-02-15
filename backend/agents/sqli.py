@@ -18,7 +18,8 @@ class SQLiAgent(BaseAgent):
             await self.update_progress(100)
             return
 
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             total_checks = len(params) * len(payloads)
             checks_done = 0
             
@@ -31,11 +32,11 @@ class SQLiAgent(BaseAgent):
                     fuzzed_url = parsed._replace(query=new_query).geturl()
                     
                     try:
-                        async with session.get(fuzzed_url) as resp:
+                        async with session.get(fuzzed_url, allow_redirects=False) as resp:
                             text = await resp.text()
                             
                             # Check for SQL errors
-                            if "syntax error" in text.lower() or "mysql" in text.lower() or "postgres" in text.lower():
+                            if any(err in text.lower() for err in ["syntax error", "mysql", "postgres", "sqlstate", "sqlite"]):
                                 await self.report_finding(
                                     severity="CRITICAL",
                                     title="SQL Injection Detected",
@@ -45,7 +46,7 @@ class SQLiAgent(BaseAgent):
                                 await self.emit_event("SUCCESS", "SQLi Vulnerability CONFIRMED!")
                                 return # Stop after finding one for demo speed
                                 
-                    except Exception as e:
+                    except (aiohttp.ClientError, asyncio.TimeoutError):
                         pass # Ignore connection errors during fuzzing
                     
                     checks_done += 1

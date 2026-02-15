@@ -8,10 +8,11 @@ class HeadersAgent(BaseAgent):
         await self.update_progress(10)
         
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self.target_url) as response:
+            timeout = aiohttp.ClientTimeout(total=20)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(self.target_url, allow_redirects=True) as response:
                     headers = response.headers
-                    await self.emit_event("INFO", f"Received {len(headers)} headers.")
+                    await self.emit_event("INFO", f"Received {len(headers)} headers from {response.url}")
                     await self.update_progress(30)
                     
                     # Check 1: HSTS
@@ -57,6 +58,10 @@ class HeadersAgent(BaseAgent):
             await self.update_progress(90)
             await self.emit_event("SUCCESS", "Headers analysis completed.")
 
+        except aiohttp.ClientConnectorError:
+            await self.emit_event("ERROR", f"Failed to connect to {self.target_url}. Please check if the URL is accessible.")
+        except asyncio.TimeoutError:
+            await self.emit_event("ERROR", f"Request to {self.target_url} timed out.")
         except Exception as e:
              await self.emit_event("ERROR", f"Headers scan failed: {str(e)}")
              raise e
